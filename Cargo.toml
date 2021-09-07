@@ -1,0 +1,15 @@
+[package]
+name = "rust-crafting-interpreters"
+version = "0.1.0"
+edition = "2018"
+authors = ["pierreyoda <pierreyoda@users.noreply.github.com>"]
+
+[[bin]]
+name = "rust_crafting_interpreters"
+path = "src/bin/main.rs"
+
+[lib]
+name = "rust_crafting_interpreters_lib"
+path = "src/lib.rs"
+
+[dependencies]
