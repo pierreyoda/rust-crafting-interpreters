@@ -13,3 +13,5 @@ name = "rust_crafting_interpreters_lib"
 path = "src/lib.rs"
 
 [dependencies]
+clap = "3.0.0-beta.4"
+thiserror = "1.0.29"
