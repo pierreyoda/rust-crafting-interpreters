@@ -1,6 +1,8 @@
+use std::collections::HashMap;
+
 use crate::errors::{LoxInterpreterError, Result};
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum LoxTokenType {
     // single-character tokens
     LeftParenthesis,
@@ -26,7 +28,7 @@ pub enum LoxTokenType {
     // literals
     Identifier(String),
     String(String),
-    Number(i64),
+    Number(f64),
     // keywords
     And,
     Class,
@@ -58,6 +60,7 @@ pub struct LoxToken {
 
 #[derive(Debug)]
 pub struct Lexer {
+    keywords: HashMap<&str, LoxTokenType>,
     source: String,
     tokens: Vec<LoxToken>,
     /// Index in the source of the first character of the lexeme being scanned.
@@ -70,27 +73,47 @@ pub struct Lexer {
 
 impl Lexer {
     pub fn from_source(source: String) -> Result<Self> {
+        let mut keywords = HashMap::new();
+        keywords.insert("and", LoxTokenType::And);
+        keywords.insert("class", LoxTokenType::Class);
+        keywords.insert("else", LoxTokenType::Else);
+        keywords.insert("false", LoxTokenType::False);
+        keywords.insert("for", LoxTokenType::For);
+        keywords.insert("fun", LoxTokenType::Fun);
+        keywords.insert("if", LoxTokenType::If);
+        keywords.insert("nil", LoxTokenType::Nil);
+        keywords.insert("or", LoxTokenType::Or);
+        keywords.insert("print", LoxTokenType::Print);
+        keywords.insert("return", LoxTokenType::Return);
+        keywords.insert("super", LoxTokenType::Super);
+        keywords.insert("this", LoxTokenType::This);
+        keywords.insert("true", LoxTokenType::True);
+        keywords.insert("var", LoxTokenType::Var);
+        keywords.insert("while", LoxTokenType::While);
+
         let mut lexer = Self {
+            keywords,
             source,
             tokens: vec![],
             start: 0,
             current: 0,
             line: 1,
         };
-        lexer.scan_tokens();
+        lexer.scan_tokens()?;
         Ok(lexer)
     }
 
-    fn scan_tokens(&mut self) {
+    fn scan_tokens(&mut self) -> Result<()> {
         while !self.is_at_end() {
             self.start = self.current;
-            self.scan_token();
+            self.scan_token()?;
         }
         self.tokens.push(LoxToken {
             kind: LoxTokenType::EndOfFile,
             lexeme: "".into(),
             line_number: self.line,
         });
+        Ok(())
     }
 
     fn scan_token(&mut self) -> Result<()> {
@@ -106,10 +129,118 @@ impl Lexer {
             '+' => self.add_token_with_kind(LoxTokenType::Plus),
             ';' => self.add_token_with_kind(LoxTokenType::Semicolon),
             '*' => self.add_token_with_kind(LoxTokenType::Star),
-            _ => Err(LoxInterpreterError::LexerUnexpectedCharacter(
-                char.to_string(),
-            )),
+            '!' => {
+                if self.advance_if_match('=') {
+                    self.add_token_with_kind(LoxTokenType::BangEqual)
+                } else {
+                    self.add_token_with_kind(LoxTokenType::Bang)
+                }
+            }
+            '=' => {
+                if self.advance_if_match('=') {
+                    self.add_token_with_kind(LoxTokenType::EqualEqual)
+                } else {
+                    self.add_token_with_kind(LoxTokenType::Equal)
+                }
+            }
+            '<' => {
+                if self.advance_if_match('=') {
+                    self.add_token_with_kind(LoxTokenType::LessEqual)
+                } else {
+                    self.add_token_with_kind(LoxTokenType::Less)
+                }
+            }
+            '>' => {
+                if self.advance_if_match('=') {
+                    self.add_token_with_kind(LoxTokenType::GreaterEqual)
+                } else {
+                    self.add_token_with_kind(LoxTokenType::Greater)
+                }
+            }
+            '/' => {
+                if self.advance_if_match('/') {
+                    // a comment goes until the end of the line
+                    while self.peek() != '\n' && !self.is_at_end() {
+                        self.advance();
+                    }
+                    Ok(())
+                } else {
+                    self.add_token_with_kind(LoxTokenType::Slash)
+                }
+            }
+            ' ' | '\r' | '\t' => Ok(()),
+            '\n' => {
+                self.line += 1;
+                Ok(())
+            }
+            '"' => {
+                let mut current_character = self.peek();
+                while current_character != '"' && !self.is_at_end() {
+                    if current_character == '\n' {
+                        self.line += 1;
+                    }
+                    self.advance();
+                    current_character = self.peek();
+                }
+
+                if self.is_at_end() {
+                    Err(LoxInterpreterError::LexerUnterminatedString)
+                } else {
+                    self.advance(); // the closing "
+                    let value = self.source[self.start + 1..self.current - 1].to_string(); // trim the surrounding quotes
+                    self.add_token_with_kind(LoxTokenType::String(value))
+                }
+            }
+            _ => {
+                if Self::is_digit(char) {
+                    self.handle_number()
+                } else if Self::is_alpha(char) {
+                    self.handle_identifier()
+                } else {
+                    Err(LoxInterpreterError::LexerUnexpectedCharacter(
+                        char.to_string(),
+                    ))
+                }
+            }
         }
+    }
+
+    fn handle_number(&mut self) -> Result<()> {
+        while Self::is_digit(self.peek()) {
+            self.advance();
+        }
+
+        // look for a fractional part
+        if self.peek() == '.' && Self::is_digit(self.peek_next()) {
+            self.advance(); // consume the .
+            while Self::is_digit(self.peek()) {
+                self.advance();
+            }
+        }
+
+        let raw = &self.source[self.start..self.current];
+        let value = raw
+            .parse()
+            .map_err(|_| LoxInterpreterError::LexerInvalidNumber(raw.to_string()))?;
+        self.add_token_with_kind(LoxTokenType::Number(value));
+
+        Ok(())
+    }
+
+    fn handle_identifier(&mut self) -> Result<()> {
+        while Self::is_alphanumeric(self.peek()) {
+            self.advance();
+        }
+
+        let text = &self.source[self.start..self.current];
+        let kind = self
+            .keywords
+            .get(text)
+            .cloned()
+            .unwrap_or(LoxTokenType::Identifier(text.to_string()));
+        self.add_token_with_kind(kind);
+
+        Ok(())
     }
 
     fn add_token_with_kind(&mut self, kind: LoxTokenType) -> Result<()> {
@@ -128,7 +259,48 @@ impl Lexer {
         char
     }
 
+    fn advance_if_match(&mut self, expected: char) -> bool {
+        if self.is_at_end() {
+            return false;
+        }
+        if let Some(current_character) = self.source.chars().nth(self.current) {
+            if current_character == expected {
+                self.current += 1;
+                return true;
+            }
+        }
+        false
+    }
+
+    fn peek(&self) -> char {
+        if self.current >= self.source.len() {
+            '\0'
+        } else {
+            self.source.chars().nth(self.current).unwrap()
+        }
+    }
+
+    fn peek_next(&self) -> char {
+        if self.current + 1 >= self.source.len() {
+            '\0'
+        } else {
+            self.source.chars().nth(n).unwrap()
+        }
+    }
+
     fn is_at_end(&self) -> bool {
         self.current >= self.source.len()
+    }
+
+    fn is_digit(char: char) -> bool {
+        char >= '0' && char <= '9'
+    }
+
+    fn is_alpha(char: char) -> bool {
+        (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || char == '_'
+    }
+
+    fn is_alphanumeric(char: char) -> bool {
+        Self::is_digit(char) || Self::is_alpha(char)
     }
 }
