@@ -1,14 +1,17 @@
 use std::collections::HashMap;
 
-use crate::errors::{LoxInterpreterError, Result};
+use crate::{
+    errors::{LoxInterpreterError, Result},
+    expressions::LoxLiteral,
+};
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum LoxTokenType {
     // single-character tokens
     LeftParenthesis,
     RightParenthesis,
     LeftBrace,
-    RIghtBrace,
+    RightBrace,
     Comma,
     Dot,
     Minus,
@@ -50,17 +53,43 @@ pub enum LoxTokenType {
     EndOfFile,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+impl LoxTokenType {
+    pub fn is_string(&self) -> bool {
+        matches!(self, LoxTokenType::String(_))
+    }
+
+    pub fn is_number(&self) -> bool {
+        matches!(self, LoxTokenType::Number(_))
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct LoxToken {
     kind: LoxTokenType,
     lexeme: String,
-    // TODO: literal?
     line_number: usize,
+}
+
+impl LoxToken {
+    pub fn get_kind(&self) -> &LoxTokenType {
+        &self.kind
+    }
+
+    pub fn build_literal(&self) -> Option<LoxLiteral> {
+        match &self.kind {
+            LoxTokenType::String(string) => Some(LoxLiteral::String(string.clone())),
+            LoxTokenType::Number(number) => Some(LoxLiteral::Number(*number)),
+            LoxTokenType::True => Some(LoxLiteral::True),
+            LoxTokenType::False => Some(LoxLiteral::False),
+            LoxTokenType::Nil => Some(LoxLiteral::Nil),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug)]
 pub struct Lexer {
-    keywords: HashMap<&str, LoxTokenType>,
+    keywords: HashMap<&'static str, LoxTokenType>,
     source: String,
     tokens: Vec<LoxToken>,
     /// Index in the source of the first character of the lexeme being scanned.
@@ -122,7 +151,7 @@ impl Lexer {
             '(' => self.add_token_with_kind(LoxTokenType::LeftParenthesis),
             ')' => self.add_token_with_kind(LoxTokenType::RightParenthesis),
             '{' => self.add_token_with_kind(LoxTokenType::LeftBrace),
-            '}' => self.add_token_with_kind(LoxTokenType::RIghtBrace),
+            '}' => self.add_token_with_kind(LoxTokenType::RightBrace),
             ',' => self.add_token_with_kind(LoxTokenType::Comma),
             '.' => self.add_token_with_kind(LoxTokenType::Dot),
             '-' => self.add_token_with_kind(LoxTokenType::Minus),
@@ -281,10 +310,11 @@ impl Lexer {
     }
 
     fn peek_next(&self) -> char {
-        if self.current + 1 >= self.source.len() {
+        let next = self.current + 1;
+        if next >= self.source.len() {
             '\0'
         } else {
-            self.source.chars().nth(n).unwrap()
+            self.source.chars().nth(next).unwrap()
         }
     }
 

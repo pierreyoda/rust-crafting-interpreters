@@ -1,5 +1,7 @@
 use thiserror::Error;
 
+use crate::lexer::LoxToken;
+
 pub type Result<T> = std::result::Result<T, LoxInterpreterError>;
 
 #[derive(Debug, Error)]
@@ -12,4 +14,6 @@ pub enum LoxInterpreterError {
     LexerInvalidNumber(String),
     #[error("Unexpected character at line {0}")]
     LexerUnexpectedCharacter(String),
+    #[error("Parse error")]
+    ParserError(LoxToken, String),
 }
