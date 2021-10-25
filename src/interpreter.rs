@@ -1,5 +1,5 @@
 use crate::{
-    errors::Result, expressions::LoxExpression, lexer::Lexer, parser::Parser, values::LoxValue,
+    errors::Result, expressions::LoxOperation, lexer::Lexer, parser::Parser, values::LoxValue,
 };
 
 use self::tree_walk::LoxTreeWalkEvaluator;
@@ -9,12 +9,12 @@ mod tree_walk;
 pub trait LoxInterpreter {
     fn new() -> Self;
 
-    fn parse(&self, source: String) -> Result<LoxExpression> {
+    fn parse(&self, source: String) -> Result<Vec<LoxOperation>> {
         let lexer = Lexer::from_source(source)?;
         Parser::from_tokens(lexer.get_tokens().clone()).parse()
     }
 
-    fn evaluate(&mut self, expression: &LoxExpression) -> Result<LoxValue>;
+    fn interpret(&mut self, operations: &[LoxOperation]) -> Result<LoxValue>;
 }
 
 pub struct LoxTreeWalkInterpreter {
@@ -28,8 +28,12 @@ impl LoxInterpreter for LoxTreeWalkInterpreter {
         }
     }
 
-    fn evaluate(&mut self, expression: &LoxExpression) -> Result<LoxValue> {
-        self.evaluator.evaluate(&expression)
+    fn interpret(&mut self, operations: &[LoxOperation]) -> Result<LoxValue> {
+        let mut last_value = LoxValue::Nil;
+        for operation in operations {
+            last_value = self.evaluator.evaluate(operation)?;
+        }
+        Ok(last_value)
     }
 }
 
@@ -44,6 +48,9 @@ mod tests {
         let source = "(5 - (3 - 1)) + -1";
         let ast = LoxTreeWalkInterpreter::new()
             .parse(source.to_string())
+            .unwrap()[0]
+            .clone()
+            .as_expression()
             .unwrap();
         let ast_representation = ast.representation();
         assert_eq!(
@@ -56,8 +63,8 @@ mod tests {
     fn test_tree_walk_interpreter_basic_evaluation() {
         let source = "(5 - (3 - 1)) + -1";
         let mut interpreter = LoxTreeWalkInterpreter::new();
-        let ast = interpreter.parse(source.to_string()).unwrap();
-        let result = interpreter.evaluate(&ast).unwrap();
+        let operations = interpreter.parse(source.to_string()).unwrap();
+        let result = interpreter.interpret(&operations).unwrap();
         assert!(result.equals(&LoxValue::Number(2.0)));
         assert_eq!(result.representation(), "2".to_string());
     }

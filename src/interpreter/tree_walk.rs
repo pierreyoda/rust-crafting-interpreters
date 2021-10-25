@@ -1,6 +1,6 @@
 use crate::{
     errors::{LoxInterpreterError, Result},
-    expressions::{LoxExpression, LoxLiteral},
+    expressions::{LoxExpression, LoxLiteral, LoxOperation, LoxStatement},
     lexer::LoxTokenType,
     printer::LoxPrintable,
     values::LoxValue,
@@ -13,12 +13,19 @@ impl LoxTreeWalkEvaluator {
         Self {}
     }
 
-    pub fn evaluate(&self, expression: &LoxExpression) -> Result<LoxValue> {
+    pub fn evaluate(&self, operation: &LoxOperation) -> Result<LoxValue> {
+        match operation {
+            LoxOperation::Expression(expression) => self.evaluate_expression(expression),
+            LoxOperation::Statement(statement) => self.evaluate_statement(statement),
+        }
+    }
+
+    fn evaluate_expression(&self, expression: &LoxExpression) -> Result<LoxValue> {
         match expression {
             LoxExpression::Literal { value } => Ok(Self::evaluate_literal(value)),
-            LoxExpression::Group { expression: expr } => self.evaluate(expr),
+            LoxExpression::Group { expression: expr } => self.evaluate_expression(expr),
             LoxExpression::Unary { operator, right } => {
-                let right_value = self.evaluate(right)?;
+                let right_value = self.evaluate_expression(right)?;
                 match operator.get_kind() {
                     // number inversion
                     LoxTokenType::Minus => {
@@ -37,7 +44,10 @@ impl LoxTreeWalkEvaluator {
                 operator,
                 right,
             } => {
-                let (left_value, right_value) = (self.evaluate(left)?, self.evaluate(right)?);
+                let (left_value, right_value) = (
+                    self.evaluate_expression(left)?,
+                    self.evaluate_expression(right)?,
+                );
                 match operator.get_kind() {
                     // subtraction
                     LoxTokenType::Minus => Ok(LoxValue::Number(
@@ -92,6 +102,17 @@ impl LoxTreeWalkEvaluator {
                         operator.get_lexeme().clone(),
                     )),
                 }
+            }
+            _ => todo!(),
+        }
+    }
+
+    fn evaluate_statement(&self, statement: &LoxStatement) -> Result<LoxValue> {
+        match statement {
+            LoxStatement::Print { expression } => {
+                let value = self.evaluate_expression(expression)?;
+                println!("{}", value.representation());
+                Ok(LoxValue::Nil)
             }
             _ => todo!(),
         }

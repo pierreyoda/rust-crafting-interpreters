@@ -1,4 +1,29 @@
-use crate::lexer::LoxToken;
+use crate::{
+    errors::{LoxInterpreterError, Result},
+    lexer::LoxToken,
+};
+
+#[derive(Clone)]
+pub enum LoxOperation {
+    Expression(LoxExpression),
+    Statement(LoxStatement),
+}
+
+impl LoxOperation {
+    pub fn as_expression(self) -> Result<LoxExpression> {
+        match self {
+            Self::Expression(expression) => Ok(expression),
+            _ => Err(LoxInterpreterError::ParserUnexpectedOperation),
+        }
+    }
+
+    pub fn as_statement(self) -> Result<LoxStatement> {
+        match self {
+            Self::Statement(statement) => Ok(statement),
+            _ => Err(LoxInterpreterError::ParserUnexpectedOperation),
+        }
+    }
+}
 
 #[derive(Clone)]
 pub enum LoxExpression {
@@ -62,6 +87,7 @@ pub enum LoxLiteral {
     Nil,
 }
 
+#[derive(Clone)]
 pub enum LoxStatement {
     /// Curly-braced block.
     Block { statements: Vec<LoxStatement> },

@@ -1,6 +1,6 @@
 use crate::{
     errors::{LoxInterpreterError, Result},
-    expressions::{LoxExpression, LoxLiteral},
+    expressions::{LoxExpression, LoxLiteral, LoxOperation, LoxStatement},
     lexer::{LoxToken, LoxTokenType},
 };
 
@@ -16,8 +16,12 @@ impl Parser {
         Self { tokens, current: 0 }
     }
 
-    pub fn parse(&mut self) -> Result<LoxExpression> {
-        self.handle_expression()
+    pub fn parse(&mut self) -> Result<Vec<LoxOperation>> {
+        let mut statements = vec![];
+        while !self.is_at_end() {
+            statements.push(self.handle_statement()?);
+        }
+        Ok(statements)
     }
 
     /// Discards tokens until a probable statement boundary is found.
@@ -124,8 +128,22 @@ impl Parser {
         LoxInterpreterError::ParserError(token.clone(), message.to_string())
     }
 
-    fn handle_expression(&mut self) -> Result<LoxExpression> {
-        self.handle_equality()
+    fn handle_statement(&mut self) -> Result<LoxOperation> {
+        if self.match_kinds(&[LoxTokenType::Print]) {
+            self.handle_print_statement()
+        } else {
+            self.handle_expression()
+        }
+    }
+
+    fn handle_print_statement(&mut self) -> Result<LoxOperation> {
+        let expression = self.handle_expression()?.as_expression()?;
+        let _ = self.consume_kind(&LoxTokenType::Semicolon, "Expect ';' after value.")?;
+        Ok(LoxOperation::Statement(LoxStatement::Print { expression }))
+    }
+
+    fn handle_expression(&mut self) -> Result<LoxOperation> {
+        Ok(LoxOperation::Expression(self.handle_equality()?))
     }
 
     fn handle_equality(&mut self) -> Result<LoxExpression> {
@@ -225,7 +243,7 @@ impl Parser {
             let value = self.peek_previous().build_literal().unwrap();
             Ok(LoxExpression::Literal { value })
         } else if self.match_kinds(&[LoxTokenType::LeftParenthesis]) {
-            let expression = self.handle_expression()?;
+            let expression = self.handle_expression()?.as_expression()?;
             self.consume_kind(
                 &LoxTokenType::RightParenthesis,
                 "Expect ')' after expression.",
