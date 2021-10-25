@@ -54,6 +54,10 @@ pub enum LoxTokenType {
 }
 
 impl LoxTokenType {
+    pub fn is_identifier(&self) -> bool {
+        matches!(self, LoxTokenType::Identifier(_))
+    }
+
     pub fn is_string(&self) -> bool {
         matches!(self, LoxTokenType::String(_))
     }

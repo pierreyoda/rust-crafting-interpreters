@@ -22,4 +22,6 @@ pub enum LoxInterpreterError {
     InterpreterUnexpectedOperation(String),
     #[error("Not a number: {0}")]
     InterpreterNotANumber(String),
+    #[error("Undefined variable '{0}'.")]
+    InterpreterUndefinedVariable(String),
 }

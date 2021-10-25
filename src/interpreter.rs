@@ -4,6 +4,7 @@ use crate::{
 
 use self::tree_walk::LoxTreeWalkEvaluator;
 
+mod environment;
 mod tree_walk;
 
 pub trait LoxInterpreter {

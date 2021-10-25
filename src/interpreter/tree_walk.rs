@@ -6,17 +6,40 @@ use crate::{
     values::LoxValue,
 };
 
-pub struct LoxTreeWalkEvaluator {}
+use super::environment::LoxEnvironment;
+
+pub struct LoxTreeWalkEvaluator {
+    environment: LoxEnvironment,
+}
 
 impl LoxTreeWalkEvaluator {
     pub fn new() -> Self {
-        Self {}
+        Self {
+            environment: LoxEnvironment::new(),
+        }
     }
 
-    pub fn evaluate(&self, operation: &LoxOperation) -> Result<LoxValue> {
+    pub fn evaluate(&mut self, operation: &LoxOperation) -> Result<LoxValue> {
         match operation {
+            LoxOperation::Invalid => Ok(LoxValue::Nil),
             LoxOperation::Expression(expression) => self.evaluate_expression(expression),
             LoxOperation::Statement(statement) => self.evaluate_statement(statement),
+        }
+    }
+
+    fn evaluate_statement(&mut self, statement: &LoxStatement) -> Result<LoxValue> {
+        match statement {
+            LoxStatement::Print { expression } => {
+                let value = self.evaluate_expression(expression)?;
+                println!("{}", value.representation());
+                Ok(LoxValue::Nil)
+            }
+            LoxStatement::Variable { name, initializer } => {
+                let value = self.evaluate_expression(initializer)?;
+                self.environment.define(name.get_lexeme().clone(), value);
+                Ok(LoxValue::Nil)
+            }
+            _ => todo!(),
         }
     }
 
@@ -103,16 +126,9 @@ impl LoxTreeWalkEvaluator {
                     )),
                 }
             }
-            _ => todo!(),
-        }
-    }
-
-    fn evaluate_statement(&self, statement: &LoxStatement) -> Result<LoxValue> {
-        match statement {
-            LoxStatement::Print { expression } => {
-                let value = self.evaluate_expression(expression)?;
-                println!("{}", value.representation());
-                Ok(LoxValue::Nil)
+            LoxExpression::Variable { name } => {
+                let value = self.environment.get(name.get_lexeme().as_str())?;
+                Ok(value.clone())
             }
             _ => todo!(),
         }

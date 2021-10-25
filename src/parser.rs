@@ -19,7 +19,7 @@ impl Parser {
     pub fn parse(&mut self) -> Result<Vec<LoxOperation>> {
         let mut statements = vec![];
         while !self.is_at_end() {
-            statements.push(self.handle_statement()?);
+            statements.push(self.handle_declaration()?);
         }
         Ok(statements)
     }
@@ -69,6 +69,27 @@ impl Parser {
             Ok(self.advance())
         } else {
             Err(Self::build_parse_error(self.peek(), error_message))
+        }
+    }
+
+    /// If the current token is an identifier, consume it and return it.
+    ///
+    /// Otherwise, return an error.
+    fn consume_identifier(&mut self, error_message: &str) -> Result<&LoxToken> {
+        if !self.is_at_end() && self.peek().get_kind().is_identifier() {
+            Ok(self.advance())
+        } else {
+            Err(Self::build_parse_error(self.peek(), error_message))
+        }
+    }
+
+    /// If the current token is an identifier, consume it and return true.
+    fn match_identifier(&mut self) -> bool {
+        if self.is_at_end() || !self.peek().get_kind().is_identifier() {
+            false
+        } else {
+            self.advance();
+            true
         }
     }
 
@@ -126,6 +147,41 @@ impl Parser {
 
     fn build_parse_error(token: &LoxToken, message: &str) -> LoxInterpreterError {
         LoxInterpreterError::ParserError(token.clone(), message.to_string())
+    }
+
+    fn handle_declaration(&mut self) -> Result<LoxOperation> {
+        let mut inner_parsing = || -> Result<LoxOperation> {
+            if self.match_kinds(&[LoxTokenType::Var]) {
+                self.handle_variable_declaration()
+            } else {
+                self.handle_statement()
+            }
+        };
+
+        if let Ok(declaration) = inner_parsing() {
+            Ok(declaration)
+        } else {
+            self.synchronize();
+            Ok(LoxOperation::Invalid)
+        }
+    }
+
+    fn handle_variable_declaration(&mut self) -> Result<LoxOperation> {
+        let name = self.consume_identifier("Expect variable name.")?.clone();
+        let initializer = if self.match_kinds(&[LoxTokenType::Equal]) {
+            self.handle_expression()
+        } else {
+            Err(Self::build_parse_error(self.peek(), "Expect '=' symbol."))
+        }?
+        .as_expression()?;
+        let _ = self.consume_kind(
+            &LoxTokenType::Semicolon,
+            "Expect ';' after variable declaration.",
+        )?;
+        Ok(LoxOperation::Statement(LoxStatement::Variable {
+            name,
+            initializer,
+        }))
     }
 
     fn handle_statement(&mut self) -> Result<LoxOperation> {
@@ -242,6 +298,10 @@ impl Parser {
         } else if self.match_number() || self.match_string() {
             let value = self.peek_previous().build_literal().unwrap();
             Ok(LoxExpression::Literal { value })
+        } else if self.match_identifier() {
+            Ok(LoxExpression::Variable {
+                name: self.peek_previous().clone(),
+            })
         } else if self.match_kinds(&[LoxTokenType::LeftParenthesis]) {
             let expression = self.handle_expression()?.as_expression()?;
             self.consume_kind(

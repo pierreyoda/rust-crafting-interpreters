@@ -5,6 +5,7 @@ use crate::{
 
 #[derive(Clone)]
 pub enum LoxOperation {
+    Invalid,
     Expression(LoxExpression),
     Statement(LoxStatement),
 }
