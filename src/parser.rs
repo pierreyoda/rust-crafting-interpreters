@@ -90,7 +90,7 @@ impl Parser {
 
     /// Consumes the current token and returns it.
     fn advance(&mut self) -> &LoxToken {
-        if self.is_at_end() {
+        if !self.is_at_end() {
             self.current += 1;
         }
         self.peek_previous()

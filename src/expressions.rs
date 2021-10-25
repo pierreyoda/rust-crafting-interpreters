@@ -53,7 +53,7 @@ pub enum LoxExpression {
     Variable { name: LoxToken },
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum LoxLiteral {
     Number(f64),
     String(String),

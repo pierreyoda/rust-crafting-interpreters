@@ -75,6 +75,10 @@ impl LoxToken {
         &self.kind
     }
 
+    pub fn get_lexeme(&self) -> &String {
+        &self.lexeme
+    }
+
     pub fn build_literal(&self) -> Option<LoxLiteral> {
         match &self.kind {
             LoxTokenType::String(string) => Some(LoxLiteral::String(string.clone())),
@@ -130,6 +134,10 @@ impl Lexer {
         };
         lexer.scan_tokens()?;
         Ok(lexer)
+    }
+
+    pub fn get_tokens(&self) -> &Vec<LoxToken> {
+        &self.tokens
     }
 
     fn scan_tokens(&mut self) -> Result<()> {
@@ -266,8 +274,8 @@ impl Lexer {
             .keywords
             .get(text)
             .cloned()
-            .unwrap_or(LoxTokenType::Identifier(text.to_string()));
-        self.add_token_with_kind(kind);
+            .unwrap_or_else(|| LoxTokenType::Identifier(text.to_string()));
+        self.add_token_with_kind(kind)?;
 
         Ok(())
     }
@@ -323,14 +331,96 @@ impl Lexer {
     }
 
     fn is_digit(char: char) -> bool {
-        char >= '0' && char <= '9'
+        ('0'..='9').contains(&char)
     }
 
     fn is_alpha(char: char) -> bool {
-        (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || char == '_'
+        char == '_' || ('a'..='z').contains(&char) || ('A'..='Z').contains(&char)
     }
 
     fn is_alphanumeric(char: char) -> bool {
         Self::is_digit(char) || Self::is_alpha(char)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::lexer::{LoxToken, LoxTokenType};
+
+    use super::Lexer;
+
+    #[test]
+    fn test_lexer_basic() {
+        let source = "(5 - (3 - 1)) + -1";
+        let lexer = Lexer::from_source(source.to_string()).unwrap();
+        let expected = vec![
+            LoxToken {
+                kind: LoxTokenType::LeftParenthesis,
+                lexeme: "(".to_string(),
+                line_number: 1,
+            },
+            LoxToken {
+                kind: LoxTokenType::Number(5.0),
+                lexeme: "5".to_string(),
+                line_number: 1,
+            },
+            LoxToken {
+                kind: LoxTokenType::Minus,
+                lexeme: "-".to_string(),
+                line_number: 1,
+            },
+            LoxToken {
+                kind: LoxTokenType::LeftParenthesis,
+                lexeme: "(".to_string(),
+                line_number: 1,
+            },
+            LoxToken {
+                kind: LoxTokenType::Number(3.0),
+                lexeme: "3".to_string(),
+                line_number: 1,
+            },
+            LoxToken {
+                kind: LoxTokenType::Minus,
+                lexeme: "-".to_string(),
+                line_number: 1,
+            },
+            LoxToken {
+                kind: LoxTokenType::Number(1.0),
+                lexeme: "1".to_string(),
+                line_number: 1,
+            },
+            LoxToken {
+                kind: LoxTokenType::RightParenthesis,
+                lexeme: ")".to_string(),
+                line_number: 1,
+            },
+            LoxToken {
+                kind: LoxTokenType::RightParenthesis,
+                lexeme: ")".to_string(),
+                line_number: 1,
+            },
+            LoxToken {
+                kind: LoxTokenType::Plus,
+                lexeme: "+".to_string(),
+                line_number: 1,
+            },
+            LoxToken {
+                kind: LoxTokenType::Minus,
+                lexeme: "-".to_string(),
+                line_number: 1,
+            },
+            LoxToken {
+                kind: LoxTokenType::Number(1.0),
+                lexeme: "1".to_string(),
+                line_number: 1,
+            },
+            LoxToken {
+                kind: LoxTokenType::EndOfFile,
+                lexeme: "".to_string(),
+                line_number: 1,
+            },
+        ];
+        dbg!(lexer.get_tokens());
+        assert_eq!(lexer.get_tokens(), &expected);
     }
 }
