@@ -6,14 +6,18 @@ use crate::{
 };
 
 /// A Lox environment stores variables within a certain scope.
+#[derive(Clone)]
 pub struct LoxEnvironment {
     values: HashMap<String, LoxValue>,
+    /// The enclosing environment, if any.
+    outer: Option<Box<LoxEnvironment>>,
 }
 
 impl LoxEnvironment {
-    pub fn new() -> Self {
+    pub fn new(outer: Option<Box<LoxEnvironment>>) -> Self {
         Self {
             values: HashMap::new(),
+            outer,
         }
     }
 
@@ -27,6 +31,8 @@ impl LoxEnvironment {
         if self.values.contains_key(name) {
             self.values.insert(name.to_string(), value);
             Ok(())
+        } else if let Some(outer) = &mut self.outer {
+            outer.assign(name, value)
         } else {
             Err(LoxInterpreterError::InterpreterUndefinedVariable(
                 name.to_string(),
@@ -36,8 +42,15 @@ impl LoxEnvironment {
 
     /// Retrieve a variable.
     pub fn get(&self, name: &str) -> Result<&LoxValue> {
-        self.values
-            .get(name)
-            .ok_or_else(|| LoxInterpreterError::InterpreterUndefinedVariable(name.to_string()))
+        let local_value = self.values.get(name);
+        if let Some(value) = local_value {
+            Ok(value)
+        } else if let Some(outer) = &self.outer {
+            outer.get(name)
+        } else {
+            Err(LoxInterpreterError::InterpreterUndefinedVariable(
+                name.to_string(),
+            ))
+        }
     }
 }

@@ -15,7 +15,7 @@ pub struct LoxTreeWalkEvaluator {
 impl LoxTreeWalkEvaluator {
     pub fn new() -> Self {
         Self {
-            environment: LoxEnvironment::new(),
+            environment: LoxEnvironment::new(None),
         }
     }
 
@@ -26,33 +26,55 @@ impl LoxTreeWalkEvaluator {
     pub fn evaluate(&mut self, operation: &LoxOperation) -> Result<LoxValue> {
         match operation {
             LoxOperation::Invalid => Ok(LoxValue::Nil),
-            LoxOperation::Expression(expression) => self.evaluate_expression(expression),
-            LoxOperation::Statement(statement) => self.evaluate_statement(statement),
+            LoxOperation::Expression(expression) => {
+                Self::evaluate_expression(expression, &mut self.environment)
+            }
+            LoxOperation::Statement(statement) => {
+                Self::evaluate_statement(statement, &mut self.environment)
+            }
         }
     }
 
-    fn evaluate_statement(&mut self, statement: &LoxStatement) -> Result<LoxValue> {
+    fn evaluate_statement(statement: &LoxStatement, env: &mut LoxEnvironment) -> Result<LoxValue> {
         match statement {
             LoxStatement::Print { expression } => {
-                let value = self.evaluate_expression(expression)?;
+                let value = Self::evaluate_expression(expression, env)?;
                 println!("{}", value.representation());
                 Ok(LoxValue::Nil)
             }
             LoxStatement::Variable { name, initializer } => {
-                let value = self.evaluate_expression(initializer)?;
-                self.environment.define(name.get_lexeme().clone(), value);
+                let value = Self::evaluate_expression(initializer, env)?;
+                env.define(name.get_lexeme().clone(), value);
                 Ok(LoxValue::Nil)
+            }
+            LoxStatement::Block { statements } => {
+                // TODO: avoid cloning
+                let mut block_env = LoxEnvironment::new(Some(Box::new(env.clone())));
+                Self::execute_block_statement(statements, &mut block_env)
             }
             _ => todo!(),
         }
     }
 
-    fn evaluate_expression(&mut self, expression: &LoxExpression) -> Result<LoxValue> {
+    fn execute_block_statement(
+        statements: &[LoxStatement],
+        env: &mut LoxEnvironment,
+    ) -> Result<LoxValue> {
+        for statement in statements {
+            Self::evaluate_statement(statement, env)?;
+        }
+        Ok(LoxValue::Nil)
+    }
+
+    fn evaluate_expression(
+        expression: &LoxExpression,
+        env: &mut LoxEnvironment,
+    ) -> Result<LoxValue> {
         match expression {
             LoxExpression::Literal { value } => Ok(Self::evaluate_literal(value)),
-            LoxExpression::Group { expression: expr } => self.evaluate_expression(expr),
+            LoxExpression::Group { expression: expr } => Self::evaluate_expression(expr, env),
             LoxExpression::Unary { operator, right } => {
-                let right_value = self.evaluate_expression(right)?;
+                let right_value = Self::evaluate_expression(right, env)?;
                 match operator.get_kind() {
                     // number inversion
                     LoxTokenType::Minus => {
@@ -72,8 +94,8 @@ impl LoxTreeWalkEvaluator {
                 right,
             } => {
                 let (left_value, right_value) = (
-                    self.evaluate_expression(left)?,
-                    self.evaluate_expression(right)?,
+                    Self::evaluate_expression(left, env)?,
+                    Self::evaluate_expression(right, env)?,
                 );
                 match operator.get_kind() {
                     // subtraction
@@ -131,13 +153,12 @@ impl LoxTreeWalkEvaluator {
                 }
             }
             LoxExpression::Variable { name } => {
-                let value = self.environment.get(name.get_lexeme().as_str())?;
+                let value = env.get(name.get_lexeme().as_str())?;
                 Ok(value.clone())
             }
             LoxExpression::Assign { name, value } => {
-                let evaluated_value = self.evaluate_expression(value)?;
-                self.environment
-                    .assign(name.get_lexeme(), evaluated_value.clone())?;
+                let evaluated_value = Self::evaluate_expression(value, env)?;
+                env.assign(name.get_lexeme(), evaluated_value.clone())?;
                 Ok(evaluated_value)
             }
             _ => todo!(),

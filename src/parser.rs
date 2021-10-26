@@ -17,11 +17,11 @@ impl Parser {
     }
 
     pub fn parse(&mut self) -> Result<Vec<LoxOperation>> {
-        let mut statements = vec![];
+        let mut operations = vec![];
         while !self.is_at_end() {
-            statements.push(self.handle_declaration()?);
+            operations.push(self.handle_declaration()?);
         }
-        Ok(statements)
+        Ok(operations)
     }
 
     /// Discards tokens until a probable statement boundary is found.
@@ -187,6 +187,8 @@ impl Parser {
     fn handle_statement(&mut self) -> Result<LoxOperation> {
         if self.match_kinds(&[LoxTokenType::Print]) {
             self.handle_print_statement()
+        } else if self.match_kinds(&[LoxTokenType::LeftBrace]) {
+            self.handle_block_statement()
         } else {
             self.handle_expression()
         }
@@ -196,6 +198,15 @@ impl Parser {
         let expression = self.handle_expression()?.as_expression()?;
         let _ = self.consume_kind(&LoxTokenType::Semicolon, "Expect ';' after value.")?;
         Ok(LoxOperation::Statement(LoxStatement::Print { expression }))
+    }
+
+    fn handle_block_statement(&mut self) -> Result<LoxOperation> {
+        let mut statements = vec![];
+        while !self.is_at_end() && !self.check(&LoxTokenType::RightBrace) {
+            statements.push(self.handle_declaration()?.as_statement()?);
+        }
+        let _ = self.consume_kind(&LoxTokenType::RightBrace, "Expect '}' after block.")?;
+        Ok(LoxOperation::Statement(LoxStatement::Block { statements }))
     }
 
     fn handle_expression(&mut self) -> Result<LoxOperation> {
