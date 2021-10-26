@@ -19,6 +19,10 @@ impl LoxTreeWalkEvaluator {
         }
     }
 
+    pub fn get_environment(&self) -> &LoxEnvironment {
+        &self.environment
+    }
+
     pub fn evaluate(&mut self, operation: &LoxOperation) -> Result<LoxValue> {
         match operation {
             LoxOperation::Invalid => Ok(LoxValue::Nil),
@@ -43,7 +47,7 @@ impl LoxTreeWalkEvaluator {
         }
     }
 
-    fn evaluate_expression(&self, expression: &LoxExpression) -> Result<LoxValue> {
+    fn evaluate_expression(&mut self, expression: &LoxExpression) -> Result<LoxValue> {
         match expression {
             LoxExpression::Literal { value } => Ok(Self::evaluate_literal(value)),
             LoxExpression::Group { expression: expr } => self.evaluate_expression(expr),
@@ -130,6 +134,12 @@ impl LoxTreeWalkEvaluator {
                 let value = self.environment.get(name.get_lexeme().as_str())?;
                 Ok(value.clone())
             }
+            LoxExpression::Assign { name, value } => {
+                let evaluated_value = self.evaluate_expression(value)?;
+                self.environment
+                    .assign(name.get_lexeme(), evaluated_value.clone())?;
+                Ok(evaluated_value)
+            }
             _ => todo!(),
         }
     }
@@ -147,8 +157,6 @@ impl LoxTreeWalkEvaluator {
     fn extract_number(value: &LoxValue) -> Result<f64> {
         value
             .as_number()
-            .ok_or(LoxInterpreterError::InterpreterNotANumber(
-                value.representation(),
-            ))
+            .ok_or_else(|| LoxInterpreterError::InterpreterNotANumber(value.representation()))
     }
 }

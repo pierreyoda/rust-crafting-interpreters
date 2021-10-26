@@ -161,7 +161,7 @@ impl Parser {
         if let Ok(declaration) = inner_parsing() {
             Ok(declaration)
         } else {
-            self.synchronize();
+            self.synchronize()?;
             Ok(LoxOperation::Invalid)
         }
     }
@@ -199,12 +199,32 @@ impl Parser {
     }
 
     fn handle_expression(&mut self) -> Result<LoxOperation> {
-        Ok(LoxOperation::Expression(self.handle_equality()?))
+        Ok(LoxOperation::Expression(self.handle_assignment()?))
+    }
+
+    fn handle_assignment(&mut self) -> Result<LoxExpression> {
+        let expression = self.handle_equality()?;
+        if self.match_kinds(&[LoxTokenType::Equal]) {
+            let equals = self.peek_previous().clone();
+            let value = self.handle_assignment()?;
+            match &expression {
+                LoxExpression::Variable { name } => Ok(LoxExpression::Assign {
+                    name: name.clone(),
+                    value: Box::new(value),
+                }),
+                _ => Err(Self::build_parse_error(
+                    &equals,
+                    "Invalid assignment target.",
+                )),
+            }
+        } else {
+            Ok(expression)
+        }
     }
 
     fn handle_equality(&mut self) -> Result<LoxExpression> {
         let mut expression = self.handle_comparison()?;
-        let kinds = [LoxTokenType::Equal, LoxTokenType::EqualEqual];
+        let kinds = [LoxTokenType::BangEqual, LoxTokenType::EqualEqual];
         while self.match_kinds(&kinds) {
             let operator = self.peek_previous().clone();
             let right = self.handle_comparison()?;

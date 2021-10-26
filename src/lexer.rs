@@ -263,7 +263,7 @@ impl Lexer {
         let value = raw
             .parse()
             .map_err(|_| LoxInterpreterError::LexerInvalidNumber(raw.to_string()))?;
-        self.add_token_with_kind(LoxTokenType::Number(value));
+        self.add_token_with_kind(LoxTokenType::Number(value))?;
 
         Ok(())
     }
@@ -424,7 +424,6 @@ mod tests {
                 line_number: 1,
             },
         ];
-        dbg!(lexer.get_tokens());
         assert_eq!(lexer.get_tokens(), &expected);
     }
 }

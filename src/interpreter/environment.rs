@@ -22,6 +22,18 @@ impl LoxEnvironment {
         self.values.insert(name, value);
     }
 
+    /// Assign to an existing variable.
+    pub fn assign(&mut self, name: &str, value: LoxValue) -> Result<()> {
+        if self.values.contains_key(name) {
+            self.values.insert(name.to_string(), value);
+            Ok(())
+        } else {
+            Err(LoxInterpreterError::InterpreterUndefinedVariable(
+                name.to_string(),
+            ))
+        }
+    }
+
     /// Retrieve a variable.
     pub fn get(&self, name: &str) -> Result<&LoxValue> {
         self.values
