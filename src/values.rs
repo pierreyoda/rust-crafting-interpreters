@@ -3,7 +3,7 @@ use crate::printer::LoxPrintable;
 pub const LOX_NUMBER_VALUE_COMPARISON_EPSILON: f64 = f64::EPSILON;
 
 /// A runtime Lox value.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum LoxValue {
     Nil,
     Number(f64),

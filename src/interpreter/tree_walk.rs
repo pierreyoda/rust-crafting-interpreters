@@ -37,6 +37,7 @@ impl LoxTreeWalkEvaluator {
 
     fn evaluate_statement(statement: &LoxStatement, env: &mut LoxEnvironment) -> Result<LoxValue> {
         match statement {
+            LoxStatement::NoOp => Ok(LoxValue::Nil),
             LoxStatement::Print { expression } => {
                 let value = Self::evaluate_expression(expression, env)?;
                 println!("{}", value.representation());
@@ -51,6 +52,19 @@ impl LoxTreeWalkEvaluator {
                 // TODO: avoid cloning
                 let mut block_env = LoxEnvironment::new(Some(Box::new(env.clone())));
                 Self::execute_block_statement(statements, &mut block_env)
+            }
+            LoxStatement::If {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
+                let condition_value = Self::evaluate_expression(condition, env)?;
+                if condition_value.is_truthy() {
+                    Self::evaluate_statement(then_branch, env)?;
+                } else if !else_branch.is_noop() {
+                    Self::evaluate_statement(else_branch, env)?;
+                }
+                Ok(LoxValue::Nil)
             }
             _ => todo!(),
         }
@@ -71,6 +85,7 @@ impl LoxTreeWalkEvaluator {
         env: &mut LoxEnvironment,
     ) -> Result<LoxValue> {
         match expression {
+            LoxExpression::NoOp => Ok(LoxValue::Nil),
             LoxExpression::Literal { value } => Ok(Self::evaluate_literal(value)),
             LoxExpression::Group { expression: expr } => Self::evaluate_expression(expr, env),
             LoxExpression::Unary { operator, right } => {
@@ -152,8 +167,35 @@ impl LoxTreeWalkEvaluator {
                     )),
                 }
             }
+            LoxExpression::Logical {
+                left,
+                operator,
+                right,
+            } => {
+                let left_value = Self::evaluate_expression(left, env)?;
+                match operator.get_kind() {
+                    LoxTokenType::Or => {
+                        if left_value.is_truthy() {
+                            Ok(left_value)
+                        } else {
+                            Self::evaluate_expression(right, env)
+                        }
+                    }
+                    LoxTokenType::And => {
+                        if !left_value.is_truthy() {
+                            Ok(left_value)
+                        } else {
+                            Self::evaluate_expression(right, env)
+                        }
+                    }
+                    _ => Err(LoxInterpreterError::InterpreterUnexpectedOperation(
+                        operator.get_lexeme().to_string(),
+                    )),
+                }
+            }
             LoxExpression::Variable { name } => {
                 let value = env.get(name.get_lexeme().as_str())?;
+                dbg!(value);
                 Ok(value.clone())
             }
             LoxExpression::Assign { name, value } => {

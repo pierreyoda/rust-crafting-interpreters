@@ -1,15 +1,19 @@
+// print statement
 print "one";
 print true;
 print 2 + 1;
 
+// variable declaration
 var a = 1;
 var b = 2;
 print a + b;
 
+// variable assignment
 var a = "before";
 a = "after";
 print a;
 
+// environment scoping
 var a = "global a";
 var b = "global b";
 var c = "global c";
@@ -29,3 +33,25 @@ var c = "global c";
 print a;
 print b;
 print c;
+
+// logical operation
+print "hi" or 2; // "hi"
+print nil or "yes"; // "yes"
+
+// while
+var counter = 0;
+while (counter < 5) {
+    counter = counter + 1;
+    print counter;
+}
+
+// for loop
+// var fa = 0;
+// var ftemp = 0;
+// print "fib start";
+// for (var fb = 1; fa < 10000; fb = ftemp + fb) {
+//   print fa;
+//   ftemp = fa;
+//   fa = fb;
+// }
+// print "fib end";

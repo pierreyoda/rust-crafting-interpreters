@@ -27,7 +27,7 @@ impl Parser {
     /// Discards tokens until a probable statement boundary is found.
     ///
     /// Used to avoid cascade errors when encountering a parse error.
-    fn synchronize(&mut self) -> Result<()> {
+    fn synchronize(&mut self) {
         self.advance();
         while !self.is_at_end() {
             if self.peek_previous().get_kind() == &LoxTokenType::Semicolon
@@ -43,11 +43,10 @@ impl Parser {
                         | LoxTokenType::Return
                 )
             {
-                return Ok(());
+                return;
             }
             self.advance();
         }
-        Ok(())
     }
 
     /// If the current token matches any of the given token types, consume it and return true.
@@ -158,22 +157,24 @@ impl Parser {
             }
         };
 
-        if let Ok(declaration) = inner_parsing() {
-            Ok(declaration)
-        } else {
-            self.synchronize()?;
-            Ok(LoxOperation::Invalid)
+        match inner_parsing() {
+            Ok(declaration) => Ok(declaration),
+            Err(why) => {
+                self.synchronize();
+                // TODO: improve error reporting (line number, etc.)
+                println!("{}: {:?}", why, why);
+                Ok(LoxOperation::Invalid)
+            }
         }
     }
 
     fn handle_variable_declaration(&mut self) -> Result<LoxOperation> {
         let name = self.consume_identifier("Expect variable name.")?.clone();
         let initializer = if self.match_kinds(&[LoxTokenType::Equal]) {
-            self.handle_expression()
+            self.handle_expression()?.as_expression()?
         } else {
-            Err(Self::build_parse_error(self.peek(), "Expect '=' symbol."))
-        }?
-        .as_expression()?;
+            LoxExpression::NoOp
+        };
         let _ = self.consume_kind(
             &LoxTokenType::Semicolon,
             "Expect ';' after variable declaration.",
@@ -185,13 +186,109 @@ impl Parser {
     }
 
     fn handle_statement(&mut self) -> Result<LoxOperation> {
-        if self.match_kinds(&[LoxTokenType::Print]) {
+        if self.match_kinds(&[LoxTokenType::For]) {
+            self.handle_for_statement()
+        } else if self.match_kinds(&[LoxTokenType::If]) {
+            self.handle_if_statement()
+        } else if self.match_kinds(&[LoxTokenType::Print]) {
             self.handle_print_statement()
+        } else if self.match_kinds(&[LoxTokenType::While]) {
+            self.handle_while_statement()
         } else if self.match_kinds(&[LoxTokenType::LeftBrace]) {
             self.handle_block_statement()
         } else {
-            self.handle_expression()
+            self.handle_expression() // FIXME: blocks are broken with handle_expression_statement?
         }
+    }
+
+    fn handle_if_statement(&mut self) -> Result<LoxOperation> {
+        let _ = self.consume_kind(&LoxTokenType::LeftParenthesis, "Expect '(' after 'if'.")?;
+        let condition = self.handle_expression()?.as_expression()?;
+        let _ = self.consume_kind(
+            &LoxTokenType::RightParenthesis,
+            "Expect ')' after if condition.",
+        )?;
+        let then_branch = self.handle_statement()?.as_statement()?;
+        let else_branch = if self.match_kinds(&[LoxTokenType::Else]) {
+            self.handle_statement()?.as_statement()?
+        } else {
+            LoxStatement::NoOp
+        };
+        Ok(LoxOperation::Statement(LoxStatement::If {
+            condition,
+            then_branch: Box::new(then_branch),
+            else_branch: Box::new(else_branch),
+        }))
+    }
+
+    fn handle_while_statement(&mut self) -> Result<LoxOperation> {
+        let _ = self.consume_kind(&LoxTokenType::LeftParenthesis, "Expect '(' after 'while'.")?;
+        let condition = self.handle_expression()?.as_expression()?;
+        let _ = self.consume_kind(
+            &LoxTokenType::RightParenthesis,
+            "Expect ')' after condition.",
+        )?;
+        let body = self.handle_statement()?.as_statement()?;
+        Ok(LoxOperation::Statement(LoxStatement::While {
+            condition,
+            body: Box::new(body),
+        }))
+    }
+
+    fn handle_for_statement(&mut self) -> Result<LoxOperation> {
+        let _ = self.consume_kind(&LoxTokenType::LeftParenthesis, "Expect '(' after 'for'.")?;
+        let initializer = if self.match_kinds(&[LoxTokenType::Semicolon]) {
+            LoxStatement::NoOp
+        } else if self.match_kinds(&[LoxTokenType::Var]) {
+            self.handle_variable_declaration()?.as_statement()?
+        } else {
+            self.handle_expression_statement()?.as_statement()?
+        };
+        let condition = if self.check(&LoxTokenType::Semicolon) {
+            LoxExpression::NoOp
+        } else {
+            self.handle_expression()?.as_expression()?
+        };
+        let increment = if self.check(&LoxTokenType::RightParenthesis) {
+            LoxExpression::NoOp
+        } else {
+            let r = self.handle_expression()?;
+            r.as_expression()?
+        };
+        let _ = self.consume_kind(
+            &LoxTokenType::RightParenthesis,
+            "Expect ')' after for clauses.",
+        )?;
+        let mut body = self.handle_statement()?;
+
+        // 'for' statement syntax desugaring
+        if !increment.is_noop() {
+            body = LoxOperation::Statement(LoxStatement::Block {
+                statements: vec![
+                    body.as_statement()?,
+                    LoxStatement::Expression {
+                        expression: increment,
+                    },
+                ],
+            })
+        }
+        body = LoxOperation::Statement(LoxStatement::While {
+            condition: if condition.is_noop() {
+                LoxExpression::Literal {
+                    value: LoxLiteral::True,
+                }
+            } else {
+                condition
+            },
+            body: Box::new(body.as_statement()?),
+        });
+        if !initializer.is_noop() {
+            body = LoxOperation::Statement(LoxStatement::Block {
+                statements: vec![initializer, body.as_statement()?],
+            });
+        }
+
+        Ok(body)
     }
 
     fn handle_print_statement(&mut self) -> Result<LoxOperation> {
@@ -202,11 +299,18 @@ impl Parser {
 
     fn handle_block_statement(&mut self) -> Result<LoxOperation> {
         let mut statements = vec![];
-        while !self.is_at_end() && !self.check(&LoxTokenType::RightBrace) {
-            statements.push(self.handle_declaration()?.as_statement()?);
+        while !self.check(&LoxTokenType::RightBrace) && !self.is_at_end() {
+            let temp = self.handle_declaration()?.as_statement()?;
+            statements.push(temp);
         }
         let _ = self.consume_kind(&LoxTokenType::RightBrace, "Expect '}' after block.")?;
         Ok(LoxOperation::Statement(LoxStatement::Block { statements }))
+    }
+
+    fn handle_expression_statement(&mut self) -> Result<LoxOperation> {
+        let expression = self.handle_expression()?;
+        let _ = self.consume_kind(&LoxTokenType::Semicolon, "Expect ';' after expression.")?;
+        Ok(expression)
     }
 
     fn handle_expression(&mut self) -> Result<LoxOperation> {
@@ -214,7 +318,7 @@ impl Parser {
     }
 
     fn handle_assignment(&mut self) -> Result<LoxExpression> {
-        let expression = self.handle_equality()?;
+        let expression = self.handle_or()?;
         if self.match_kinds(&[LoxTokenType::Equal]) {
             let equals = self.peek_previous().clone();
             let value = self.handle_assignment()?;
@@ -231,6 +335,34 @@ impl Parser {
         } else {
             Ok(expression)
         }
+    }
+
+    fn handle_or(&mut self) -> Result<LoxExpression> {
+        let mut expression = self.handle_and()?;
+        while self.match_kinds(&[LoxTokenType::Or]) {
+            let operator = self.peek_previous().clone();
+            let right = self.handle_and()?;
+            expression = LoxExpression::Logical {
+                operator,
+                left: Box::new(expression),
+                right: Box::new(right),
+            };
+        }
+        Ok(expression)
+    }
+
+    fn handle_and(&mut self) -> Result<LoxExpression> {
+        let mut expression = self.handle_equality()?;
+        while self.match_kinds(&[LoxTokenType::And]) {
+            let operator = self.peek_previous().clone();
+            let right = self.handle_equality()?;
+            expression = LoxExpression::Logical {
+                operator,
+                left: Box::new(expression),
+                right: Box::new(right),
+            };
+        }
+        Ok(expression)
     }
 
     fn handle_equality(&mut self) -> Result<LoxExpression> {
@@ -299,18 +431,16 @@ impl Parser {
     }
 
     fn handle_unary(&mut self) -> Result<LoxExpression> {
-        Ok(
-            if self.match_kinds(&[LoxTokenType::Bang, LoxTokenType::Minus]) {
-                let operator = self.peek_previous().clone();
-                let right = self.handle_unary()?;
-                LoxExpression::Unary {
-                    operator,
-                    right: Box::new(right),
-                }
-            } else {
-                self.handle_primary()?
-            },
-        )
+        if self.match_kinds(&[LoxTokenType::Bang, LoxTokenType::Minus]) {
+            let operator = self.peek_previous().clone();
+            let right = self.handle_unary()?;
+            Ok(LoxExpression::Unary {
+                operator,
+                right: Box::new(right),
+            })
+        } else {
+            self.handle_primary()
+        }
     }
 
     fn handle_primary(&mut self) -> Result<LoxExpression> {

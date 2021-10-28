@@ -46,24 +46,70 @@ impl LoxInterpreter for LoxTreeWalkInterpreter {
 
 #[cfg(test)]
 mod tests {
-    use crate::{printer::LoxPrintable, values::LoxValue};
+    use crate::{
+        printer::{operations_representation, LoxPrintable},
+        values::LoxValue,
+    };
 
     use super::{LoxInterpreter, LoxTreeWalkInterpreter};
 
     #[test]
     fn test_interpreter_parsing_and_ast_printing() {
-        let source = "(5 - (3 - 1)) + -1";
-        let ast = LoxTreeWalkInterpreter::new()
-            .parse(source.to_string())
-            .unwrap()[0]
-            .clone()
-            .as_expression()
-            .unwrap();
-        let ast_representation = ast.representation();
-        assert_eq!(
-            ast_representation,
-            "(+ (group (- 5 (group (- 3 1)))) (- 1))".to_string()
-        );
+        let test_data = vec![
+            (
+                "(5 - (3 - 1)) + -1",
+                "(+ (group (- 5 (group (- 3 1)))) (- 1))",
+            ),
+            (
+                r#"
+            {
+                var a = "outer";
+                {
+                    print a;
+                }
+            }
+                        "#,
+                "(block (var a = outer)(block (print a)))",
+            ),
+            (
+                r#"
+            var a = 10;
+            if (a > 5) {
+                print a - 5;
+            } else {
+                print a;
+            }
+                            "#,
+                "(var a = 10)\n(if-else (> a 5) (block (print (- a 5))) (block (print a)))",
+            ),
+            // (
+            //     r#"
+            // var counter = 0;
+            // while (counter < 5) {
+            //     counter = 10;
+            //     print counter;
+            // }"#,
+            //     "",
+            // ),
+            //             (
+            //                 r#"
+            // var a = 0;
+            // var temp = 0;
+            // for (var b = 1; a < 10000; b = temp + b) {
+            //     print a;
+            //     temp = a;
+            //     a = b;
+            // }
+            // "#,
+            //                 "",
+            //             ),
+        ];
+
+        let interpreter = LoxTreeWalkInterpreter::new();
+        for (source, expected) in test_data {
+            let parsed = interpreter.parse(source.to_string()).unwrap();
+            assert_eq!(operations_representation(&parsed), expected);
+        }
     }
 
     #[test]

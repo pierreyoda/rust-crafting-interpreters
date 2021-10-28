@@ -28,6 +28,7 @@ impl LoxOperation {
 
 #[derive(Clone)]
 pub enum LoxExpression {
+    NoOp,
     /// Variable assignment.
     Assign {
         name: LoxToken,
@@ -51,9 +52,13 @@ pub enum LoxExpression {
         name: LoxToken,
     },
     /// Using parentheses to group expressions.
-    Group { expression: Box<LoxExpression> },
+    Group {
+        expression: Box<LoxExpression>,
+    },
     /// Literal value.
-    Literal { value: LoxLiteral },
+    Literal {
+        value: LoxLiteral,
+    },
     /// Logical (and/or) branching.
     Logical {
         left: Box<LoxExpression>,
@@ -67,16 +72,29 @@ pub enum LoxExpression {
         value: Box<LoxExpression>,
     },
     /// Super expression.
-    Super { keyword: LoxToken, method: LoxToken },
+    Super {
+        keyword: LoxToken,
+        method: LoxToken,
+    },
     /// This expression.
-    This { keyword: LoxToken },
+    This {
+        keyword: LoxToken,
+    },
     /// Unary operation.
     Unary {
         operator: LoxToken,
         right: Box<LoxExpression>,
     },
     /// Variable access.
-    Variable { name: LoxToken },
+    Variable {
+        name: LoxToken,
+    },
+}
+
+impl LoxExpression {
+    pub fn is_noop(&self) -> bool {
+        matches!(self, Self::NoOp)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -90,8 +108,11 @@ pub enum LoxLiteral {
 
 #[derive(Clone)]
 pub enum LoxStatement {
+    NoOp,
     /// Curly-braced block.
-    Block { statements: Vec<LoxStatement> },
+    Block {
+        statements: Vec<LoxStatement>,
+    },
     /// Class declaration.
     Class {
         name: LoxToken,
@@ -99,7 +120,9 @@ pub enum LoxStatement {
         methods: Vec<LoxStatement>, // array of LoxStatement::Function
     },
     /// Expression.
-    Expression { expression: LoxExpression },
+    Expression {
+        expression: LoxExpression,
+    },
     /// Function declaration.
     Function {
         name: LoxToken,
@@ -109,11 +132,13 @@ pub enum LoxStatement {
     /// If branching.
     If {
         condition: LoxExpression,
-        then_ranch: Box<LoxStatement>,
+        then_branch: Box<LoxStatement>,
         else_branch: Box<LoxStatement>,
     },
     /// Print.
-    Print { expression: LoxExpression },
+    Print {
+        expression: LoxExpression,
+    },
     /// Return.
     Return {
         keyword: LoxToken,
@@ -129,4 +154,10 @@ pub enum LoxStatement {
         condition: LoxExpression,
         body: Box<LoxStatement>,
     },
+}
+
+impl LoxStatement {
+    pub fn is_noop(&self) -> bool {
+        matches!(self, Self::NoOp)
+    }
 }
