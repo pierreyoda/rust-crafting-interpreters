@@ -4,12 +4,11 @@ use crate::{
 
 use self::{environment::LoxEnvironment, tree_walk::LoxTreeWalkEvaluator};
 
-mod environment;
-mod tree_walk;
+pub mod builtins;
+pub mod environment;
+pub mod tree_walk;
 
 pub trait LoxInterpreter {
-    fn new() -> Self;
-
     fn parse(&self, source: String) -> Result<Vec<LoxOperation>> {
         let lexer = Lexer::from_source(source)?;
         Parser::from_tokens(lexer.get_tokens().clone()).parse()
@@ -24,13 +23,15 @@ pub struct LoxTreeWalkInterpreter {
     evaluator: LoxTreeWalkEvaluator,
 }
 
-impl LoxInterpreter for LoxTreeWalkInterpreter {
-    fn new() -> Self {
+impl LoxTreeWalkInterpreter {
+    pub fn new() -> Self {
         Self {
             evaluator: LoxTreeWalkEvaluator::new(),
         }
     }
+}
 
+impl LoxInterpreter for LoxTreeWalkInterpreter {
     fn interpret(&mut self, operations: &[LoxOperation]) -> Result<LoxValue> {
         let mut last_value = LoxValue::Nil;
         for operation in operations {

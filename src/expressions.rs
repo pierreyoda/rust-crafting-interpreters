@@ -160,4 +160,17 @@ impl LoxStatement {
     pub fn is_noop(&self) -> bool {
         matches!(self, Self::NoOp)
     }
+
+    pub fn deconstruct_function_declaration(
+        &self,
+    ) -> Option<(&LoxToken, &[LoxToken], &[LoxStatement])> {
+        match self {
+            Self::Function {
+                name,
+                parameters,
+                body,
+            } => Some((name, parameters.as_ref(), body.as_ref())),
+            _ => None,
+        }
+    }
 }

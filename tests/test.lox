@@ -55,3 +55,12 @@ while (counter < 5) {
 //   fa = fb;
 // }
 // print "fib end";
+
+fun add(a, b) {
+    return a + b;
+}
+print add;
+print add(1, 2);
+
+print clock;
+print clock();

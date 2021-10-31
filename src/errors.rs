@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-use crate::lexer::LoxToken;
+use crate::{lexer::LoxToken, values::LoxValue};
 
 pub type Result<T> = std::result::Result<T, LoxInterpreterError>;
 
@@ -24,4 +24,10 @@ pub enum LoxInterpreterError {
     InterpreterNotANumber(String),
     #[error("Undefined variable '{0}'.")]
     InterpreterUndefinedVariable(String),
+    #[error("Can only call functions and classes.")]
+    InterpreterNonCallableValue(LoxToken),
+    #[error("Expected {0} arguments but got {1}.")]
+    InterpreterCallableWrongArity(usize, usize),
+    #[error("Return value")]
+    InterpreterReturn(LoxValue), // TODO: find a better way
 }

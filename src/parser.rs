@@ -150,7 +150,9 @@ impl Parser {
 
     fn handle_declaration(&mut self) -> Result<LoxOperation> {
         let mut inner_parsing = || -> Result<LoxOperation> {
-            if self.match_kinds(&[LoxTokenType::Var]) {
+            if self.match_kinds(&[LoxTokenType::Fun]) {
+                self.handle_function("function")
+            } else if self.match_kinds(&[LoxTokenType::Var]) {
                 self.handle_variable_declaration()
             } else {
                 self.handle_statement()
@@ -166,6 +168,47 @@ impl Parser {
                 Ok(LoxOperation::Invalid)
             }
         }
+    }
+
+    fn handle_function(&mut self, kind: &str) -> Result<LoxOperation> {
+        let name = self
+            .consume_identifier(format!("Expect {} name.", kind).as_str())?
+            .clone();
+        let _ = self.consume_kind(
+            &LoxTokenType::LeftParenthesis,
+            format!("Expect '(' after {} name.", kind).as_str(),
+        )?;
+        let mut parameters = vec![];
+        if !self.check(&LoxTokenType::RightParenthesis) {
+            parameters.push(self.consume_identifier("Expect parameter name.")?.clone());
+            while self.match_kinds(&[LoxTokenType::Comma]) {
+                if parameters.len() >= 255 {
+                    // TODO: better error reporting
+                    println!(
+                        "{:?}",
+                        Self::build_parse_error(
+                            self.peek(),
+                            "Can't have more than 255 parameters."
+                        )
+                    );
+                }
+                parameters.push(self.consume_identifier("Expect parameter name.")?.clone());
+            }
+        }
+        let _ = self.consume_kind(
+            &LoxTokenType::RightParenthesis,
+            "Expect ')' after parameters.",
+        )?;
+        let _ = self.consume_kind(
+            &LoxTokenType::LeftBrace,
+            format!("Expect '{{' before {} body.", kind).as_str(),
+        )?;
+        let body = self.handle_statements_block()?;
+        Ok(LoxOperation::Statement(LoxStatement::Function {
+            name,
+            parameters,
+            body,
+        }))
     }
 
     fn handle_variable_declaration(&mut self) -> Result<LoxOperation> {
@@ -192,10 +235,14 @@ impl Parser {
             self.handle_if_statement()
         } else if self.match_kinds(&[LoxTokenType::Print]) {
             self.handle_print_statement()
+        } else if self.match_kinds(&[LoxTokenType::Return]) {
+            self.handle_return_statement()
         } else if self.match_kinds(&[LoxTokenType::While]) {
             self.handle_while_statement()
         } else if self.match_kinds(&[LoxTokenType::LeftBrace]) {
-            self.handle_block_statement()
+            Ok(LoxOperation::Statement(LoxStatement::Block {
+                statements: self.handle_statements_block()?,
+            }))
         } else {
             self.handle_expression() // FIXME: blocks are broken with handle_expression_statement?
         }
@@ -297,14 +344,28 @@ impl Parser {
         Ok(LoxOperation::Statement(LoxStatement::Print { expression }))
     }
 
-    fn handle_block_statement(&mut self) -> Result<LoxOperation> {
+    fn handle_return_statement(&mut self) -> Result<LoxOperation> {
+        let keyword = self.peek_previous().clone();
+        let value = if self.check(&LoxTokenType::Semicolon) {
+            LoxExpression::NoOp
+        } else {
+            self.handle_expression()?.as_expression()?
+        };
+        let _ = self.consume_kind(&LoxTokenType::Semicolon, "Expect ';' after return value.")?;
+        Ok(LoxOperation::Statement(LoxStatement::Return {
+            keyword,
+            value,
+        }))
+    }
+
+    fn handle_statements_block(&mut self) -> Result<Vec<LoxStatement>> {
         let mut statements = vec![];
         while !self.check(&LoxTokenType::RightBrace) && !self.is_at_end() {
             let temp = self.handle_declaration()?.as_statement()?;
             statements.push(temp);
         }
         let _ = self.consume_kind(&LoxTokenType::RightBrace, "Expect '}' after block.")?;
-        Ok(LoxOperation::Statement(LoxStatement::Block { statements }))
+        Ok(statements)
     }
 
     fn handle_expression_statement(&mut self) -> Result<LoxOperation> {
@@ -439,8 +500,48 @@ impl Parser {
                 right: Box::new(right),
             })
         } else {
-            self.handle_primary()
+            self.handle_call()
         }
+    }
+
+    fn handle_call(&mut self) -> Result<LoxExpression> {
+        let mut expression = self.handle_primary()?;
+        loop {
+            if self.match_kinds(&[LoxTokenType::LeftParenthesis]) {
+                expression = self.finish_call(expression)?;
+            } else {
+                break;
+            }
+        }
+        Ok(expression)
+    }
+
+    fn finish_call(&mut self, callee: LoxExpression) -> Result<LoxExpression> {
+        let mut arguments = vec![];
+        if !self.check(&LoxTokenType::RightParenthesis) {
+            arguments.push(self.handle_expression()?.as_expression()?);
+            while self.match_kinds(&[LoxTokenType::Comma]) {
+                if arguments.len() >= 255 {
+                    // TODO: better error reporting
+                    println!(
+                        "{:?}",
+                        Self::build_parse_error(self.peek(), "Can't have more than 255 arguments.")
+                    );
+                }
+                arguments.push(self.handle_expression()?.as_expression()?);
+            }
+        }
+        let parenthesis = self
+            .consume_kind(
+                &LoxTokenType::RightParenthesis,
+                "Expect ')' after arguments.",
+            )?
+            .clone();
+        Ok(LoxExpression::Call {
+            callee: Box::new(callee),
+            arguments,
+            parenthesis,
+        })
     }
 
     fn handle_primary(&mut self) -> Result<LoxExpression> {

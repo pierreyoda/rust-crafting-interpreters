@@ -1,4 +1,5 @@
 use crate::{
+    callable::LoxCallable,
     errors::{LoxInterpreterError, Result},
     expressions::{LoxExpression, LoxLiteral, LoxOperation, LoxStatement},
     lexer::LoxTokenType,
@@ -6,31 +7,31 @@ use crate::{
     values::LoxValue,
 };
 
-use super::environment::LoxEnvironment;
+use super::{builtins::build_lox_clock_builtin, environment::LoxEnvironment};
 
 pub struct LoxTreeWalkEvaluator {
-    environment: LoxEnvironment,
+    globals: LoxEnvironment,
 }
 
 impl LoxTreeWalkEvaluator {
     pub fn new() -> Self {
-        Self {
-            environment: LoxEnvironment::new(None),
-        }
+        let mut globals = LoxEnvironment::new(None);
+        globals.define("clock".into(), build_lox_clock_builtin());
+        Self { globals }
     }
 
     pub fn get_environment(&self) -> &LoxEnvironment {
-        &self.environment
+        &self.globals
     }
 
     pub fn evaluate(&mut self, operation: &LoxOperation) -> Result<LoxValue> {
         match operation {
             LoxOperation::Invalid => Ok(LoxValue::Nil),
             LoxOperation::Expression(expression) => {
-                Self::evaluate_expression(expression, &mut self.environment)
+                Self::evaluate_expression(expression, &mut self.globals)
             }
             LoxOperation::Statement(statement) => {
-                Self::evaluate_statement(statement, &mut self.environment)
+                Self::evaluate_statement(statement, &mut self.globals)
             }
         }
     }
@@ -49,7 +50,6 @@ impl LoxTreeWalkEvaluator {
                 Ok(LoxValue::Nil)
             }
             LoxStatement::Block { statements } => {
-                // TODO: avoid cloning
                 let mut block_env = LoxEnvironment::new(Some(Box::new(env.clone())));
                 Self::execute_block_statement(statements, &mut block_env)
             }
@@ -66,11 +66,31 @@ impl LoxTreeWalkEvaluator {
                 }
                 Ok(LoxValue::Nil)
             }
+            LoxStatement::Function {
+                name,
+                parameters,
+                body: _,
+            } => {
+                let function = LoxValue::Function {
+                    arity: parameters.len(),
+                    declaration: Box::new(statement.clone()),
+                };
+                env.define(name.get_lexeme().clone(), function);
+                Ok(LoxValue::Nil)
+            }
+            LoxStatement::Return { keyword: _, value } => {
+                let returned_value = if value.is_noop() {
+                    LoxValue::Nil
+                } else {
+                    Self::evaluate_expression(value, env)?
+                };
+                Err(LoxInterpreterError::InterpreterReturn(returned_value))
+            }
             _ => todo!(),
         }
     }
 
-    fn execute_block_statement(
+    pub fn execute_block_statement(
         statements: &[LoxStatement],
         env: &mut LoxEnvironment,
     ) -> Result<LoxValue> {
@@ -195,13 +215,24 @@ impl LoxTreeWalkEvaluator {
             }
             LoxExpression::Variable { name } => {
                 let value = env.get(name.get_lexeme().as_str())?;
-                dbg!(value);
                 Ok(value.clone())
             }
             LoxExpression::Assign { name, value } => {
                 let evaluated_value = Self::evaluate_expression(value, env)?;
                 env.assign(name.get_lexeme(), evaluated_value.clone())?;
                 Ok(evaluated_value)
+            }
+            LoxExpression::Call {
+                callee,
+                arguments,
+                parenthesis,
+            } => {
+                let callee_value = Self::evaluate_expression(callee, env)?;
+                let mut arguments_values = Vec::with_capacity(arguments.len());
+                for argument in arguments {
+                    arguments_values.push(Self::evaluate_expression(argument, env)?);
+                }
+                callee_value.call(env, &arguments_values, parenthesis)
             }
             _ => todo!(),
         }
