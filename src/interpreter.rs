@@ -55,8 +55,8 @@ mod tests {
     fn test_interpreter_parsing_and_ast_printing() {
         let test_data = vec![
             (
-                "(5 - (3 - 1)) + -1",
-                "(+ (group (- 5 (group (- 3 1)))) (- 1))",
+                "var computed = (5 - (3 - 1)) + -1;",
+                "(var computed = (+ (group (- 5 (group (- 3 1)))) (- 1)))",
             ),
             (
                 r#"
@@ -80,15 +80,15 @@ mod tests {
                             "#,
                 "(var a = 10)\n(if-else (> a 5) (block (print (- a 5))) (block (print a)))",
             ),
-            // (
-            //     r#"
-            // var counter = 0;
-            // while (counter < 5) {
-            //     counter = 10;
-            //     print counter;
-            // }"#,
-            //     "",
-            // ),
+            (
+                r#"
+            var counter = 0;
+            while (counter < 5) {
+                counter = 10;
+                print counter;
+            }"#,
+                "(var counter = 0)\n(while (< counter 5) (block (; (= counter 10))(print counter)))",
+            ),
             //             (
             //                 r#"
             // var a = 0;
@@ -101,6 +101,36 @@ mod tests {
             // "#,
             //                 "",
             //             ),
+                        (
+                            r#"
+            fun add(a, b) {
+                return a + b;
+            }
+            print add(1, 2);
+                        "#,
+                            "(fun add (a b) (return (+ a b)))\n(print (call add 1 2))",
+                        ),
+            (
+                r#"
+fun makeCounter() {
+    var i = 0;
+    fun count() {
+        i = i + 1;
+        print i;
+    }
+
+    return count;
+}
+
+var counter = makeCounter();
+counter(); // 1
+counter(); // 2
+"#,
+                r#"(fun makeCounter () (var i = 0)(fun count () (; (= i (+ i 1)))(print i))(return count))
+(var counter = (call makeCounter))
+(; (call counter))
+(; (call counter))"#,
+            ),
         ];
 
         let interpreter = LoxTreeWalkInterpreter::new();
@@ -111,16 +141,6 @@ mod tests {
     }
 
     #[test]
-    fn test_tree_walk_interpreter_basic_evaluation() {
-        let source = "(5 - (3 - 1)) + -1";
-        let mut interpreter = LoxTreeWalkInterpreter::new();
-        let operations = interpreter.parse(source.to_string()).unwrap();
-        let result = interpreter.interpret(&operations).unwrap();
-        assert!(result.equals(&LoxValue::Number(2.0)));
-        assert_eq!(result.representation(), "2".to_string());
-    }
-
-    #[test]
     fn test_tree_walk_interpreter_basic_variables() {
         let source = r#"
 var variable = "before";
@@ -128,11 +148,16 @@ variable = "after";
         "#;
         let mut interpreter = LoxTreeWalkInterpreter::new();
         let operations = interpreter.parse(source.to_string()).unwrap();
+        assert_eq!(
+            operations_representation(&operations),
+            "(var variable = before)\n(; (= variable after))"
+        );
         let _ = interpreter.interpret(&operations).unwrap();
-        assert!(interpreter
+        let variable = interpreter
             .get_environment()
+            .borrow()
             .get("variable")
-            .unwrap()
-            .equals(&LoxValue::String("after".into())));
+            .unwrap();
+        assert!(variable.equals(&LoxValue::String("after".into())));
     }
 }

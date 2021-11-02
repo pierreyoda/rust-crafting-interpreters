@@ -244,7 +244,7 @@ impl Parser {
                 statements: self.handle_statements_block()?,
             }))
         } else {
-            self.handle_expression() // FIXME: blocks are broken with handle_expression_statement?
+            self.handle_expression_statement()
         }
     }
 
@@ -284,6 +284,7 @@ impl Parser {
 
     fn handle_for_statement(&mut self) -> Result<LoxOperation> {
         let _ = self.consume_kind(&LoxTokenType::LeftParenthesis, "Expect '(' after 'for'.")?;
+        // initializer
         let initializer = if self.match_kinds(&[LoxTokenType::Semicolon]) {
             LoxStatement::NoOp
         } else if self.match_kinds(&[LoxTokenType::Var]) {
@@ -291,21 +292,27 @@ impl Parser {
         } else {
             self.handle_expression_statement()?.as_statement()?
         };
+        // condition
         let condition = if self.check(&LoxTokenType::Semicolon) {
             LoxExpression::NoOp
         } else {
             self.handle_expression()?.as_expression()?
         };
+        let _ = self.consume_kind(
+            &LoxTokenType::LeftParenthesis,
+            "Expect ';' after loop condition.",
+        )?;
+        // increment
         let increment = if self.check(&LoxTokenType::RightParenthesis) {
             LoxExpression::NoOp
         } else {
-            let r = self.handle_expression()?;
-            r.as_expression()?
+            self.handle_expression()?.as_expression()?
         };
         let _ = self.consume_kind(
             &LoxTokenType::RightParenthesis,
             "Expect ')' after for clauses.",
         )?;
+        // body
         let mut body = self.handle_statement()?;
 
         // 'for' statement syntax desugaring
@@ -361,17 +368,18 @@ impl Parser {
     fn handle_statements_block(&mut self) -> Result<Vec<LoxStatement>> {
         let mut statements = vec![];
         while !self.check(&LoxTokenType::RightBrace) && !self.is_at_end() {
-            let temp = self.handle_declaration()?.as_statement()?;
-            statements.push(temp);
+            statements.push(self.handle_declaration()?.as_statement()?);
         }
         let _ = self.consume_kind(&LoxTokenType::RightBrace, "Expect '}' after block.")?;
         Ok(statements)
     }
 
     fn handle_expression_statement(&mut self) -> Result<LoxOperation> {
-        let expression = self.handle_expression()?;
+        let expression = self.handle_expression()?.as_expression()?;
         let _ = self.consume_kind(&LoxTokenType::Semicolon, "Expect ';' after expression.")?;
-        Ok(expression)
+        Ok(LoxOperation::Statement(LoxStatement::Expression {
+            expression,
+        }))
     }
 
     fn handle_expression(&mut self) -> Result<LoxOperation> {

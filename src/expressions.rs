@@ -14,14 +14,18 @@ impl LoxOperation {
     pub fn as_expression(self) -> Result<LoxExpression> {
         match self {
             Self::Expression(expression) => Ok(expression),
-            _ => Err(LoxInterpreterError::ParserUnexpectedOperation),
+            _ => Err(LoxInterpreterError::ParserUnexpectedOperation(
+                "operation is not an expression".into(),
+            )),
         }
     }
 
     pub fn as_statement(self) -> Result<LoxStatement> {
         match self {
             Self::Statement(statement) => Ok(statement),
-            _ => Err(LoxInterpreterError::ParserUnexpectedOperation),
+            _ => Err(LoxInterpreterError::ParserUnexpectedOperation(
+                "operation is not a statement".into(),
+            )),
         }
     }
 }
@@ -171,6 +175,42 @@ impl LoxStatement {
                 body,
             } => Some((name, parameters.as_ref(), body.as_ref())),
             _ => None,
+        }
+    }
+
+    pub fn get_type_representation(&self) -> &str {
+        match self {
+            Self::NoOp => "noop",
+            Self::Block { statements: _ } => "block",
+            Self::Class {
+                name: _,
+                super_class: _,
+                methods: _,
+            } => "class",
+            Self::Expression { expression: _ } => "expression",
+            Self::Function {
+                name: _,
+                parameters: _,
+                body: _,
+            } => "function",
+            Self::If {
+                condition: _,
+                then_branch: _,
+                else_branch: _,
+            } => "if",
+            Self::Print { expression: _ } => "print",
+            Self::Return {
+                keyword: _,
+                value: _,
+            } => "return",
+            Self::Variable {
+                name: _,
+                initializer: _,
+            } => "variable",
+            Self::While {
+                condition: _,
+                body: _,
+            } => "while",
         }
     }
 }

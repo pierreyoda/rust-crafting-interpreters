@@ -16,8 +16,8 @@ pub enum LoxInterpreterError {
     LexerUnexpectedCharacter(String),
     #[error("Parse error")]
     ParserError(LoxToken, String),
-    #[error("Parse error: unexpected operation")]
-    ParserUnexpectedOperation,
+    #[error("Parse error: unexpected operation: {0}")]
+    ParserUnexpectedOperation(String),
     #[error("Unexpected operation: {0}")]
     InterpreterUnexpectedOperation(String),
     #[error("Not a number: {0}")]

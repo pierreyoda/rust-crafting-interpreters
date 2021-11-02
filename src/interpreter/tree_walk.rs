@@ -47,6 +47,10 @@ impl LoxTreeWalkEvaluator {
     ) -> Result<LoxValue> {
         match statement {
             LoxStatement::NoOp => Ok(LoxValue::Nil),
+            LoxStatement::Expression { expression } => {
+                Self::evaluate_expression(expression, env)?;
+                Ok(LoxValue::Nil)
+            }
             LoxStatement::Print { expression } => {
                 let value = Self::evaluate_expression(expression, env)?;
                 println!("{}", value.representation());
@@ -74,6 +78,12 @@ impl LoxTreeWalkEvaluator {
                 }
                 Ok(LoxValue::Nil)
             }
+            LoxStatement::While { condition, body } => {
+                while Self::evaluate_expression(condition, env)?.is_truthy() {
+                    let _ = Self::evaluate_statement(body, env)?;
+                }
+                Ok(LoxValue::Nil)
+            }
             LoxStatement::Function {
                 name,
                 parameters,
@@ -95,7 +105,16 @@ impl LoxTreeWalkEvaluator {
                 };
                 Err(LoxInterpreterError::InterpreterReturn(returned_value))
             }
-            _ => todo!(),
+            LoxStatement::Class {
+                name,
+                super_class,
+                methods,
+            } => todo!(),
+            // _ => panic!(
+            //     "treewalk.evaluate_statement: not implemented for: {}\n{}",
+            //     statement.get_type_representation(),
+            //     statement.representation()
+            // ),
         }
     }
 
@@ -224,11 +243,12 @@ impl LoxTreeWalkEvaluator {
             }
             LoxExpression::Variable { name } => {
                 let value = env.borrow().get(name.get_lexeme().as_str())?;
-                Ok(value.clone())
+                Ok(value)
             }
             LoxExpression::Assign { name, value } => {
                 let evaluated_value = Self::evaluate_expression(value, env)?;
-                env.assign(name.get_lexeme(), evaluated_value.clone())?;
+                env.borrow_mut()
+                    .assign(name.get_lexeme(), evaluated_value.clone())?;
                 Ok(evaluated_value)
             }
             LoxExpression::Call {
