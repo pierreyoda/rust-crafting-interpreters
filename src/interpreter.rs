@@ -89,18 +89,20 @@ mod tests {
             }"#,
                 "(var counter = 0)\n(while (< counter 5) (block (; (= counter 10))(print counter)))",
             ),
-            //             (
-            //                 r#"
-            // var a = 0;
-            // var temp = 0;
-            // for (var b = 1; a < 10000; b = temp + b) {
-            //     print a;
-            //     temp = a;
-            //     a = b;
-            // }
-            // "#,
-            //                 "",
-            //             ),
+                        (
+                            r#"
+            var a = 0;
+            var temp = 0;
+            for (var b = 1; a < 10000; b = temp + b) {
+                print a;
+                temp = a;
+                a = b;
+            }
+            "#,
+                            r#"(var a = 0)
+(var temp = 0)
+(block (var b = 1)(while (< a 10000) (block (block (print a)(; (= temp a))(; (= a b)))(; (= b (+ temp b))))))"#,
+                        ),
                         (
                             r#"
             fun add(a, b) {

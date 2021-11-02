@@ -298,10 +298,7 @@ impl Parser {
         } else {
             self.handle_expression()?.as_expression()?
         };
-        let _ = self.consume_kind(
-            &LoxTokenType::LeftParenthesis,
-            "Expect ';' after loop condition.",
-        )?;
+        let _ = self.consume_kind(&LoxTokenType::Semicolon, "Expect ';' after loop condition.")?;
         // increment
         let increment = if self.check(&LoxTokenType::RightParenthesis) {
             LoxExpression::NoOp

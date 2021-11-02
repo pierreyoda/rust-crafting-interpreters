@@ -45,16 +45,16 @@ while (counter < 5) {
     print counter;
 }
 
-// for loop
-// var fa = 0;
-// var ftemp = 0;
-// print "fib start";
-// for (var fb = 1; fa < 10000; fb = ftemp + fb) {
-//   print fa;
-//   ftemp = fa;
-//   fa = fb;
-// }
-// print "fib end";
+for loop
+var fa = 0;
+var ftemp = 0;
+print "fib start";
+for (var fb = 1; fa < 10000; fb = ftemp + fb) {
+  print fa;
+  ftemp = fa;
+  fa = fb;
+}
+print "fib end";
 
 fun add(a, b) {
     return a + b;
@@ -65,16 +65,16 @@ print add(1, 2);
 print clock;
 print clock();
 
-// var a = "global";
-// {
-//   fun showA() {
-//     print a;
-//   }
+var a = "global";
+{
+  fun showA() {
+    print a;
+  }
 
-//   showA();
-//   var a = "block";
-//   showA();
-// }
+  showA();
+  var a = "block";
+  showA();
+}
 
 fun makeCounter() {
   var i = 0;
