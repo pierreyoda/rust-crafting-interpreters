@@ -7,20 +7,25 @@ use crate::{
     values::LoxValue,
 };
 
-use super::{builtins::build_lox_clock_builtin, environment::LoxEnvironment};
+use super::{
+    builtins::build_lox_clock_builtin,
+    environment::{LoxEnvironment, LoxEnvironmentHandle},
+};
 
 pub struct LoxTreeWalkEvaluator {
-    globals: LoxEnvironment,
+    globals: LoxEnvironmentHandle,
 }
 
 impl LoxTreeWalkEvaluator {
     pub fn new() -> Self {
-        let mut globals = LoxEnvironment::new(None);
-        globals.define("clock".into(), build_lox_clock_builtin());
+        let globals = LoxEnvironment::new(None);
+        globals
+            .borrow_mut()
+            .define("clock".into(), build_lox_clock_builtin());
         Self { globals }
     }
 
-    pub fn get_environment(&self) -> &LoxEnvironment {
+    pub fn get_environment(&self) -> &LoxEnvironmentHandle {
         &self.globals
     }
 
@@ -36,7 +41,10 @@ impl LoxTreeWalkEvaluator {
         }
     }
 
-    fn evaluate_statement(statement: &LoxStatement, env: &mut LoxEnvironment) -> Result<LoxValue> {
+    fn evaluate_statement(
+        statement: &LoxStatement,
+        env: &mut LoxEnvironmentHandle,
+    ) -> Result<LoxValue> {
         match statement {
             LoxStatement::NoOp => Ok(LoxValue::Nil),
             LoxStatement::Print { expression } => {
@@ -46,11 +54,11 @@ impl LoxTreeWalkEvaluator {
             }
             LoxStatement::Variable { name, initializer } => {
                 let value = Self::evaluate_expression(initializer, env)?;
-                env.define(name.get_lexeme().clone(), value);
+                env.borrow_mut().define(name.get_lexeme().clone(), value);
                 Ok(LoxValue::Nil)
             }
             LoxStatement::Block { statements } => {
-                let mut block_env = LoxEnvironment::new(Some(Box::new(env.clone())));
+                let mut block_env = LoxEnvironment::new(Some(env.clone()));
                 Self::execute_block_statement(statements, &mut block_env)
             }
             LoxStatement::If {
@@ -74,8 +82,9 @@ impl LoxTreeWalkEvaluator {
                 let function = LoxValue::Function {
                     arity: parameters.len(),
                     declaration: Box::new(statement.clone()),
+                    closure: env.clone(),
                 };
-                env.define(name.get_lexeme().clone(), function);
+                env.borrow_mut().define(name.get_lexeme().clone(), function);
                 Ok(LoxValue::Nil)
             }
             LoxStatement::Return { keyword: _, value } => {
@@ -92,7 +101,7 @@ impl LoxTreeWalkEvaluator {
 
     pub fn execute_block_statement(
         statements: &[LoxStatement],
-        env: &mut LoxEnvironment,
+        env: &mut LoxEnvironmentHandle,
     ) -> Result<LoxValue> {
         for statement in statements {
             Self::evaluate_statement(statement, env)?;
@@ -102,7 +111,7 @@ impl LoxTreeWalkEvaluator {
 
     fn evaluate_expression(
         expression: &LoxExpression,
-        env: &mut LoxEnvironment,
+        env: &mut LoxEnvironmentHandle,
     ) -> Result<LoxValue> {
         match expression {
             LoxExpression::NoOp => Ok(LoxValue::Nil),
@@ -214,7 +223,7 @@ impl LoxTreeWalkEvaluator {
                 }
             }
             LoxExpression::Variable { name } => {
-                let value = env.get(name.get_lexeme().as_str())?;
+                let value = env.borrow().get(name.get_lexeme().as_str())?;
                 Ok(value.clone())
             }
             LoxExpression::Assign { name, value } => {

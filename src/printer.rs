@@ -38,9 +38,23 @@ impl LoxPrintable for LoxExpression {
             ),
             Self::Call {
                 callee,
-                parenthesis,
+                parenthesis: _,
                 arguments,
-            } => todo!(),
+            } => {
+                let arguments_fragments = arguments
+                    .iter()
+                    .map(|argument| LoxPrintableFragment::Expression(argument))
+                    .collect();
+                let fragments = [
+                    vec![
+                        LoxPrintableFragment::Arbitrary("call".into()),
+                        LoxPrintableFragment::Expression(callee),
+                    ],
+                    arguments_fragments,
+                ]
+                .concat();
+                debug_parenthesize_fragments(fragments.as_slice())
+            }
             Self::Get { object, name } => todo!(),
             Self::Group { expression } => debug_parenthesize("group", &[expression.as_ref()]),
             Self::Literal { value } => value.representation(),
@@ -89,7 +103,21 @@ impl LoxPrintable for LoxStatement {
                 name,
                 parameters,
                 body,
-            } => todo!(),
+            } => {
+                let mut output = format!("(fun {} (", name.get_lexeme());
+                for (i, parameter) in parameters.iter().enumerate() {
+                    if i > 0 {
+                        output += " ";
+                    }
+                    output += parameter.get_lexeme().as_str();
+                }
+                output += ") ";
+                for body_statement in body {
+                    output += body_statement.representation().as_str();
+                }
+                output += ")";
+                output
+            }
             Self::If {
                 condition,
                 then_branch,
@@ -181,6 +209,7 @@ fn debug_parenthesize(name: &str, expressions: &[&LoxExpression]) -> String {
     output
 }
 
+#[derive(Clone)]
 enum LoxPrintableFragment<'a> {
     Arbitrary(String),
     Token(&'a LoxToken),

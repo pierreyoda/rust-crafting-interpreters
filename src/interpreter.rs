@@ -2,7 +2,7 @@ use crate::{
     errors::Result, expressions::LoxOperation, lexer::Lexer, parser::Parser, values::LoxValue,
 };
 
-use self::{environment::LoxEnvironment, tree_walk::LoxTreeWalkEvaluator};
+use self::{environment::LoxEnvironmentHandle, tree_walk::LoxTreeWalkEvaluator};
 
 pub mod builtins;
 pub mod environment;
@@ -16,7 +16,7 @@ pub trait LoxInterpreter {
 
     fn interpret(&mut self, operations: &[LoxOperation]) -> Result<LoxValue>;
 
-    fn get_environment(&self) -> &LoxEnvironment;
+    fn get_environment(&self) -> &LoxEnvironmentHandle;
 }
 
 pub struct LoxTreeWalkInterpreter {
@@ -40,17 +40,14 @@ impl LoxInterpreter for LoxTreeWalkInterpreter {
         Ok(last_value)
     }
 
-    fn get_environment(&self) -> &LoxEnvironment {
+    fn get_environment(&self) -> &LoxEnvironmentHandle {
         self.evaluator.get_environment()
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        printer::{operations_representation, LoxPrintable},
-        values::LoxValue,
-    };
+    use crate::{printer::operations_representation, values::LoxValue};
 
     use super::{LoxInterpreter, LoxTreeWalkInterpreter};
 

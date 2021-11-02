@@ -4,12 +4,17 @@ use crate::{
     callable::LoxCallable,
     errors::{LoxInterpreterError, Result},
     expressions::LoxStatement,
-    interpreter::{environment::LoxEnvironment, tree_walk::LoxTreeWalkEvaluator},
+    interpreter::{
+        environment::{LoxEnvironment, LoxEnvironmentHandle},
+        tree_walk::LoxTreeWalkEvaluator,
+    },
     lexer::LoxToken,
     printer::LoxPrintable,
 };
 
 pub const LOX_NUMBER_VALUE_COMPARISON_EPSILON: f64 = f64::EPSILON;
+
+pub type LoxNativeFunctionExecutor = fn(&mut LoxEnvironmentHandle, &[LoxValue]) -> Result<LoxValue>;
 
 /// A runtime Lox value.
 #[derive(Clone)]
@@ -22,12 +27,13 @@ pub enum LoxValue {
         /// Number of input parameters.
         arity: usize,
         declaration: Box<LoxStatement>,
+        closure: LoxEnvironmentHandle,
     },
     NativeFunction {
         label: String,
         /// Number of input parameters.
         arity: usize,
-        execute: fn(&mut LoxEnvironment, &[LoxValue]) -> Result<LoxValue>,
+        execute: LoxNativeFunctionExecutor,
     },
 }
 
@@ -69,6 +75,7 @@ impl LoxCallable for LoxValue {
             Self::Function {
                 arity,
                 declaration: _,
+                closure: _,
             } => Some(*arity),
             Self::NativeFunction {
                 label: _,
@@ -81,24 +88,30 @@ impl LoxCallable for LoxValue {
 
     fn call(
         &self,
-        env: &mut LoxEnvironment,
+        env: &mut LoxEnvironmentHandle,
         arguments: &[LoxValue],
         parenthesis: &LoxToken,
     ) -> Result<LoxValue> {
         match self {
             // TODO: adapt to other evaluators implementations (bytecode)
-            Self::Function { arity, declaration } => {
+            Self::Function {
+                arity,
+                declaration,
+                closure,
+            } => {
                 if *arity != arguments.len() {
                     Err(LoxInterpreterError::InterpreterCallableWrongArity(
                         *arity,
                         arguments.len(),
                     ))
                 } else {
-                    let mut function_env = LoxEnvironment::new(Some(Box::new(env.clone())));
+                    let mut function_env = LoxEnvironment::new(Some(closure.clone()));
                     let (_, parameters, body) =
                         declaration.deconstruct_function_declaration().unwrap();
                     for (i, parameter) in parameters.iter().enumerate() {
-                        function_env.define(parameter.get_lexeme().clone(), arguments[i].clone());
+                        function_env
+                            .borrow_mut()
+                            .define(parameter.get_lexeme().clone(), arguments[i].clone());
                         // TODO: abstract over interpreter evaluator (bytecode)
                     }
                     match LoxTreeWalkEvaluator::execute_block_statement(body, &mut function_env) {
@@ -141,6 +154,7 @@ impl LoxPrintable for LoxValue {
             Self::Function {
                 arity: _,
                 declaration,
+                closure: _,
             } => {
                 let (name, _, _) = declaration.deconstruct_function_declaration().unwrap();
                 format!("<fn {}>", name.get_lexeme())

@@ -1,5 +1,5 @@
 use crate::{
-    errors::Result, interpreter::environment::LoxEnvironment, lexer::LoxToken,
+    errors::Result, interpreter::environment::LoxEnvironmentHandle, lexer::LoxToken,
     printer::LoxPrintable, values::LoxValue,
 };
 
@@ -8,7 +8,7 @@ pub trait LoxCallable: LoxPrintable {
 
     fn call(
         &self,
-        env: &mut LoxEnvironment,
+        env: &mut LoxEnvironmentHandle,
         arguments: &[LoxValue],
         parenthesis: &LoxToken,
     ) -> Result<LoxValue>;
