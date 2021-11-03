@@ -2,10 +2,13 @@ use crate::{
     errors::Result, expressions::LoxOperation, lexer::Lexer, parser::Parser, values::LoxValue,
 };
 
-use self::{environment::LoxEnvironmentHandle, tree_walk::LoxTreeWalkEvaluator};
+use self::{
+    environment::LoxEnvironmentHandle, resolver::LoxResolver, tree_walk::LoxTreeWalkEvaluator,
+};
 
 pub mod builtins;
 pub mod environment;
+pub mod resolver;
 pub mod tree_walk;
 
 pub trait LoxInterpreter {
@@ -20,28 +23,32 @@ pub trait LoxInterpreter {
 }
 
 pub struct LoxTreeWalkInterpreter {
-    evaluator: LoxTreeWalkEvaluator,
+    resolver: LoxResolver,
 }
 
 impl LoxTreeWalkInterpreter {
     pub fn new() -> Self {
+        let evaluator = LoxTreeWalkEvaluator::new();
         Self {
-            evaluator: LoxTreeWalkEvaluator::new(),
+            resolver: LoxResolver::new(evaluator),
         }
     }
 }
 
 impl LoxInterpreter for LoxTreeWalkInterpreter {
     fn interpret(&mut self, operations: &[LoxOperation]) -> Result<LoxValue> {
+        for operation in operations {
+            self.resolver.resolve(operation)?;
+        }
         let mut last_value = LoxValue::Nil;
         for operation in operations {
-            last_value = self.evaluator.evaluate(operation)?;
+            last_value = self.resolver.get_evaluator_mut().evaluate(operation)?;
         }
         Ok(last_value)
     }
 
     fn get_environment(&self) -> &LoxEnvironmentHandle {
-        self.evaluator.get_environment()
+        self.resolver.get_evaluator().get_environment()
     }
 }
 

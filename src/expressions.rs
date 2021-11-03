@@ -1,6 +1,9 @@
+use std::hash::Hash;
+
 use crate::{
     errors::{LoxInterpreterError, Result},
     lexer::LoxToken,
+    printer::LoxPrintable,
 };
 
 #[derive(Clone)]
@@ -93,6 +96,80 @@ pub enum LoxExpression {
     Variable {
         name: LoxToken,
     },
+}
+
+impl Hash for LoxExpression {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            Self::NoOp => {
+                self.representation().hash(state);
+            }
+            Self::Assign { name, value } => {
+                name.hash(state);
+                value.hash(state);
+            }
+            Self::Binary {
+                left,
+                operator,
+                right,
+            } => {
+                left.hash(state);
+                operator.hash(state);
+                right.hash(state);
+            }
+            Self::Call {
+                callee,
+                arguments,
+                parenthesis,
+            } => {
+                callee.hash(state);
+                arguments.hash(state);
+                parenthesis.hash(state);
+            }
+            Self::Get { name, object } => {
+                name.hash(state);
+                object.hash(state);
+            }
+            Self::Group { expression } => {
+                expression.hash(state);
+            }
+            Self::Literal { value: _ } => {
+                self.representation().hash(state);
+            }
+            Self::Logical {
+                left,
+                operator,
+                right,
+            } => {
+                left.hash(state);
+                operator.hash(state);
+                right.hash(state);
+            }
+            Self::Set {
+                name,
+                object,
+                value,
+            } => {
+                name.hash(state);
+                object.hash(state);
+                value.hash(state);
+            }
+            Self::Super { keyword, method } => {
+                keyword.hash(state);
+                method.hash(state);
+            }
+            Self::This { keyword } => {
+                keyword.hash(state);
+            }
+            Self::Unary { operator, right } => {
+                operator.hash(state);
+                right.hash(state);
+            }
+            Self::Variable { name } => {
+                name.hash(state);
+            }
+        }
+    }
 }
 
 impl LoxExpression {

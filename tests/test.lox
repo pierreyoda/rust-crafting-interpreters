@@ -65,17 +65,6 @@ print add(1, 2);
 print clock;
 print clock();
 
-var a = "global";
-{
-  fun showA() {
-    print a;
-  }
-
-  showA();
-  var a = "block";
-  showA();
-}
-
 fun makeCounter() {
   var i = 0;
   fun count() {
@@ -89,3 +78,53 @@ fun makeCounter() {
 var counter = makeCounter();
 counter(); // 1
 counter(); // 2
+
+print "=== RESOLVING & BINDING ===";
+var a = "global";
+{
+  fun showA() {
+    print a;
+  }
+
+  showA(); // "global"
+  var a = "block";
+  showA(); // "global"
+}
+
+fun f() {
+  var a = "a";
+  var b = "b";
+  fun g() {
+    print b; // expect: b
+    print a; // expect: a
+  }
+  g();
+}
+f();
+
+{
+  var i = "before";
+
+  // New variable is in inner scope.
+  for (var i = 0; i < 1; i = i + 1) {
+    print i; // expect: 0
+
+    // Loop body is in second inner scope.
+    var i = -1;
+    print i; // expect: -1
+  }
+}
+
+{
+  // New variable shadows outer variable.
+  for (var i = 0; i > 0; i = i + 1) {}
+
+  // Goes out of scope after loop.
+  var i = "after";
+  print i; // expect: after
+
+  // Can reuse an existing variable.
+  for (i = 0; i < 1; i = i + 1) {
+    print i; // expect: 0
+  }
+}

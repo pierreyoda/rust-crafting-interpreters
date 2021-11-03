@@ -1,4 +1,7 @@
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    hash::{self, Hash},
+};
 
 use crate::{
     errors::{LoxInterpreterError, Result},
@@ -72,6 +75,12 @@ pub struct LoxToken {
     kind: LoxTokenType,
     lexeme: String,
     line_number: usize,
+}
+
+impl Hash for LoxToken {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        format!("{}-{}", self.lexeme, self.line_number).hash(state);
+    }
 }
 
 impl LoxToken {

@@ -18,6 +18,14 @@ pub enum LoxInterpreterError {
     ParserError(LoxToken, String),
     #[error("Parse error: unexpected operation: {0}")]
     ParserUnexpectedOperation(String),
+    #[error("Resolver error: unexpected operation: {0}")]
+    ResolverUnexpectedOperation(String),
+    #[error("Can't read local variable in its own initializer.")]
+    ResolverRecursiveLocalAssignment(LoxToken),
+    #[error("Already a variable with this name in this scope.")]
+    ResolverDuplicateVariableDeclaration(LoxToken),
+    #[error("Can't return from top-level code.")]
+    ResolverImpossibleTopLevelReturn(LoxToken),
     #[error("Unexpected operation: {0}")]
     InterpreterUnexpectedOperation(String),
     #[error("Not a number: {0}")]

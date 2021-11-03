@@ -7,6 +7,42 @@ use crate::{
 
 pub type LoxEnvironmentHandle = Rc<RefCell<LoxEnvironment>>;
 
+/// Retrieve a variable, with the given lookup depth.
+pub fn environment_handle_get_at_depth(
+    handle: &LoxEnvironmentHandle,
+    name: &str,
+    distance: usize,
+) -> Result<LoxValue> {
+    environment_handle_ancestor(handle, distance)
+        .borrow()
+        .get(name)
+}
+
+/// Assign a variable with the given lookup depth.
+pub fn environment_handle_assign_at_depth(
+    handle: &mut LoxEnvironmentHandle,
+    name: &str,
+    distance: usize,
+    value: LoxValue,
+) {
+    environment_handle_ancestor(handle, distance)
+        .borrow_mut()
+        .values
+        .insert(name.into(), value);
+}
+
+fn environment_handle_ancestor(
+    handle: &LoxEnvironmentHandle,
+    distance: usize,
+) -> LoxEnvironmentHandle {
+    let mut current = handle.clone();
+    for _ in 0..distance {
+        let current_env = handle.borrow();
+        current = current_env.outer.as_ref().unwrap().clone();
+    }
+    current
+}
+
 /// A Lox environment stores variables within a certain scope.
 #[derive(Clone)]
 pub struct LoxEnvironment {
