@@ -26,6 +26,10 @@ pub enum LoxInterpreterError {
     ResolverDuplicateVariableDeclaration(LoxToken),
     #[error("Can't return from top-level code.")]
     ResolverImpossibleTopLevelReturn(LoxToken),
+    #[error("Can't return a value from an initializer.")]
+    ResolverImpossibleInitializerReturn(LoxToken),
+    #[error("Can't use 'this' outside of a class.")]
+    ResolverImpossibleThisUsage(LoxToken),
     #[error("Unexpected operation: {0}")]
     InterpreterUnexpectedOperation(String),
     #[error("Not a number: {0}")]
@@ -34,6 +38,10 @@ pub enum LoxInterpreterError {
     InterpreterUndefinedVariable(String),
     #[error("Can only call functions and classes.")]
     InterpreterNonCallableValue(LoxToken),
+    #[error("Only instances have fields.")]
+    InterpreterCannotGetOrSetField(LoxToken),
+    #[error("Undefined property '{0}'.")]
+    InterpreterUndefinedClassProperty(String),
     #[error("Expected {0} arguments but got {1}.")]
     InterpreterCallableWrongArity(usize, usize),
     #[error("Return value")]

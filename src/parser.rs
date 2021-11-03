@@ -150,8 +150,10 @@ impl Parser {
 
     fn handle_declaration(&mut self) -> Result<LoxOperation> {
         let mut inner_parsing = || -> Result<LoxOperation> {
-            if self.match_kinds(&[LoxTokenType::Fun]) {
-                self.handle_function("function")
+            if self.match_kinds(&[LoxTokenType::Class]) {
+                self.handle_class_declaration()
+            } else if self.match_kinds(&[LoxTokenType::Fun]) {
+                self.handle_function_declaration("function")
             } else if self.match_kinds(&[LoxTokenType::Var]) {
                 self.handle_variable_declaration()
             } else {
@@ -170,7 +172,22 @@ impl Parser {
         }
     }
 
-    fn handle_function(&mut self, kind: &str) -> Result<LoxOperation> {
+    fn handle_class_declaration(&mut self) -> Result<LoxOperation> {
+        let name = self.consume_identifier("Expect class name.")?.clone();
+        let _ = self.consume_kind(&LoxTokenType::LeftBrace, "Expect '{' before class body.")?;
+        let mut methods = vec![];
+        while !self.check(&LoxTokenType::RightBrace) && !self.is_at_end() {
+            methods.push(self.handle_function_declaration("method")?.as_statement()?);
+        }
+        let _ = self.consume_kind(&LoxTokenType::RightBrace, "Expect '}' before class body.")?;
+        Ok(LoxOperation::Statement(LoxStatement::Class {
+            name,
+            methods,
+            super_class: LoxExpression::NoOp,
+        }))
+    }
+
+    fn handle_function_declaration(&mut self, kind: &str) -> Result<LoxOperation> {
         let name = self
             .consume_identifier(format!("Expect {} name.", kind).as_str())?
             .clone();
@@ -393,6 +410,11 @@ impl Parser {
                     name: name.clone(),
                     value: Box::new(value),
                 }),
+                LoxExpression::Get { name, object } => Ok(LoxExpression::Set {
+                    name: name.clone(),
+                    object: object.clone(),
+                    value: Box::new(value),
+                }),
                 _ => Err(Self::build_parse_error(
                     &equals,
                     "Invalid assignment target.",
@@ -514,6 +536,14 @@ impl Parser {
         loop {
             if self.match_kinds(&[LoxTokenType::LeftParenthesis]) {
                 expression = self.finish_call(expression)?;
+            } else if self.match_kinds(&[LoxTokenType::Dot]) {
+                let name = self
+                    .consume_identifier("Expect property name after '.'.")?
+                    .clone();
+                expression = LoxExpression::Get {
+                    name,
+                    object: Box::new(expression),
+                };
             } else {
                 break;
             }
@@ -565,6 +595,10 @@ impl Parser {
         } else if self.match_number() || self.match_string() {
             let value = self.peek_previous().build_literal().unwrap();
             Ok(LoxExpression::Literal { value })
+        } else if self.match_kinds(&[LoxTokenType::This]) {
+            Ok(LoxExpression::This {
+                keyword: self.peek_previous().clone(),
+            })
         } else if self.match_identifier() {
             Ok(LoxExpression::Variable {
                 name: self.peek_previous().clone(),

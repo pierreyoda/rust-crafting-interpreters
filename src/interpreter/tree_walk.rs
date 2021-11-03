@@ -59,18 +59,15 @@ impl LoxTreeWalkEvaluator {
     }
 
     pub fn lookup_variable(
-        &self,
         expression: &LoxExpression,
         name: &LoxToken,
         env: &LoxEnvironmentHandle,
+        locals: &LoxTreeWalkEvaluatorLocals,
     ) -> Result<LoxValue> {
-        if let Some(distance) = self
-            .locals
-            .get(&Self::compute_locals_key_from_expression(expression))
-        {
+        if let Some(distance) = locals.get(&Self::compute_locals_key_from_expression(expression)) {
             environment_handle_get_at_depth(env, name.get_lexeme().as_str(), *distance)
         } else {
-            self.globals.borrow().get(name.get_lexeme().as_str())
+            env.borrow().get(name.get_lexeme().as_str())
         }
     }
 
@@ -130,6 +127,7 @@ impl LoxTreeWalkEvaluator {
                 body: _,
             } => {
                 let function = LoxValue::Function {
+                    is_initializer: false,
                     arity: parameters.len(),
                     declaration: Box::new(statement.clone()),
                     closure: env.clone(),
@@ -149,7 +147,33 @@ impl LoxTreeWalkEvaluator {
                 name,
                 super_class,
                 methods,
-            } => todo!(),
+            } => {
+                // allows references to the class inside its own methods
+                env.borrow_mut()
+                    .define(name.get_lexeme().clone(), LoxValue::Nil);
+                // methods
+                let mut evaluated_methods: HashMap<String, LoxValue> = HashMap::new();
+                for method in methods {
+                    if let LoxStatement::Function { name: method_name, parameters, body } = method {
+                            let borrowed_method: &LoxStatement = method.into();
+                            let declaration = borrowed_method.clone();
+                            let function = LoxValue::Function {
+                                arity: parameters.len(),
+                                is_initializer: name.get_lexeme() == "this",
+                                declaration: Box::new(declaration),
+                                closure: env.clone(),
+                            };
+                            evaluated_methods.insert(method_name.get_lexeme().clone(), function);
+                        } else {
+                        panic!("interpreter: expected a function statement in class methods");
+                        }
+                }
+                // class
+                let class = LoxValue::Class { name: name.get_lexeme().clone(), methods: evaluated_methods };
+                env.borrow_mut()
+                    .define(name.get_lexeme().clone(), class);
+                Ok(LoxValue::Nil)
+            }
             // _ => panic!(
             //     "treewalk.evaluate_statement: not implemented for: {}\n{}",
             //     statement.get_type_representation(),
@@ -306,6 +330,20 @@ impl LoxTreeWalkEvaluator {
                 }
                 Ok(evaluated_value)
             }
+            LoxExpression::Get { name, object } => {
+                let object_value = Self::evaluate_expression(object, env, locals)?;
+                object_value.instance_get_field(name)
+            }
+            LoxExpression::Set {
+                name,
+                object,
+                value,
+            } => {
+                // FIXME: we should use an Rc-based LoxValueHandle here
+                let mut object_value = Self::evaluate_expression(object, env, locals)?;
+                let evaluated_value = Self::evaluate_expression(value, env, locals)?;
+                object_value.instance_set_field(name, evaluated_value)
+            }
             LoxExpression::Call {
                 callee,
                 arguments,
@@ -317,6 +355,9 @@ impl LoxTreeWalkEvaluator {
                     arguments_values.push(Self::evaluate_expression(argument, env, locals)?);
                 }
                 callee_value.call(env, locals, &arguments_values, parenthesis)
+            }
+            LoxExpression::This { keyword } => {
+                Self::lookup_variable(expression, keyword, env, locals)
             }
             _ => todo!(),
         }

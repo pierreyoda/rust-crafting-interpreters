@@ -1,7 +1,9 @@
+use std::collections::HashMap;
+
 use crate::{
     errors::{LoxInterpreterError, Result},
     interpreter::{
-        environment::{LoxEnvironment, LoxEnvironmentHandle},
+        environment::{environment_handle_get_at_depth, LoxEnvironment, LoxEnvironmentHandle},
         tree_walk::{LoxTreeWalkEvaluator, LoxTreeWalkEvaluatorLocals},
     },
     lexer::LoxToken,
@@ -26,6 +28,7 @@ impl LoxCallable for LoxValue {
         match self {
             Self::Function {
                 arity,
+                is_initializer: _,
                 declaration: _,
                 closure: _,
             } => Some(*arity),
@@ -34,6 +37,16 @@ impl LoxCallable for LoxValue {
                 arity,
                 execute: _,
             } => Some(*arity),
+            Self::Class {
+                name: _,
+                methods: _,
+            } => {
+                if let Some(initializer) = self.class_find_method("init") {
+                    initializer.arity()
+                } else {
+                    Some(0)
+                }
+            }
             _ => None,
         }
     }
@@ -49,6 +62,7 @@ impl LoxCallable for LoxValue {
             // TODO: adapt to other evaluators implementations (bytecode)
             Self::Function {
                 arity,
+                is_initializer,
                 declaration,
                 closure,
             } => {
@@ -72,16 +86,22 @@ impl LoxCallable for LoxValue {
                         &mut function_env,
                         locals,
                     ) {
-                        Ok(_) => Ok(LoxValue::Nil),
+                        Ok(_) => environment_handle_get_at_depth(closure, "this", 0),
                         Err(why) => match why {
-                            LoxInterpreterError::InterpreterReturn(value) => Ok(value),
+                            LoxInterpreterError::InterpreterReturn(value) => {
+                                if self.function_is_initializer() {
+                                    environment_handle_get_at_depth(closure, "this", 0)
+                                } else {
+                                    Ok(value)
+                                }
+                            }
                             _ => Err(why),
                         },
                     }
                 }
             }
             Self::NativeFunction {
-                label: _label,
+                label: _,
                 arity,
                 execute,
             } => {
@@ -93,6 +113,26 @@ impl LoxCallable for LoxValue {
                 } else {
                     execute(env, arguments)
                 }
+            }
+            Self::Class {
+                name: _,
+                methods: _,
+            } => {
+                // class constructor (empty by default)
+                let instance = LoxValue::ClassInstance {
+                    class: Box::new(self.clone()),
+                    fields: HashMap::new(),
+                };
+                // initializer (optional)
+                if let Some(initializer) = self.class_find_method("init") {
+                    initializer.class_method_bind_this(self).unwrap().call(
+                        env,
+                        locals,
+                        arguments,
+                        parenthesis,
+                    )?;
+                }
+                Ok(instance)
             }
             _ => Err(LoxInterpreterError::InterpreterNonCallableValue(
                 parenthesis.clone(),

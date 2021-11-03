@@ -4,15 +4,22 @@ use crate::{
     errors::{LoxInterpreterError, Result},
     expressions::{LoxExpression, LoxOperation, LoxStatement},
     lexer::LoxToken,
-    printer::LoxPrintable,
 };
 
 use super::tree_walk::LoxTreeWalkEvaluator;
 
 #[derive(Clone, PartialEq, Eq)]
+enum LoxClassType {
+    None,
+    Class,
+}
+
+#[derive(Clone, PartialEq, Eq)]
 enum LoxFunctionType {
     None,
     Function,
+    ClassMethod,
+    ClassInitializer,
 }
 
 type LoxLexicalScope = HashMap<String, bool>;
@@ -21,6 +28,7 @@ pub struct LoxResolver {
     evaluator: LoxTreeWalkEvaluator,
     /// LIFO stack of block scopes.
     scopes: Vec<LoxLexicalScope>,
+    current_class_kind: LoxClassType,
     current_function_kind: LoxFunctionType,
 }
 
@@ -29,6 +37,7 @@ impl LoxResolver {
         Self {
             evaluator,
             scopes: vec![],
+            current_class_kind: LoxClassType::None,
             current_function_kind: LoxFunctionType::None,
         }
     }
@@ -87,6 +96,11 @@ impl LoxResolver {
                     ));
                 }
                 if !value.is_noop() {
+                    if self.current_function_kind == LoxFunctionType::ClassInitializer {
+                        return Err(LoxInterpreterError::ResolverImpossibleInitializerReturn(
+                            keyword.clone(),
+                        ));
+                    }
                     self.resolve_expression(value)?;
                 }
             }
@@ -94,7 +108,34 @@ impl LoxResolver {
                 name,
                 super_class,
                 methods,
-            } => todo!(),
+            } => {
+                let enclosing_class_kind = self.current_class_kind.clone();
+                self.current_class_kind = LoxClassType::Class;
+                self.declare(name)?;
+                self.define(name);
+                self.begin_scope();
+                if let Some(scope) = self.scopes.last_mut() {
+                    scope.insert("this".into(), true);
+                }
+                for method in methods {
+                    self.resolve_function(
+                        method,
+                        if method
+                            .deconstruct_function_declaration()
+                            .unwrap()
+                            .0
+                            .get_lexeme()
+                            == "init"
+                        {
+                            LoxFunctionType::ClassInitializer
+                        } else {
+                            LoxFunctionType::ClassMethod
+                        },
+                    )?;
+                }
+                self.end_scope();
+                self.current_class_kind = enclosing_class_kind;
+            }
             LoxStatement::If {
                 condition,
                 then_branch,
@@ -118,7 +159,14 @@ impl LoxResolver {
     fn resolve_expression(&mut self, expression: &LoxExpression) -> Result<()> {
         match expression {
             LoxExpression::NoOp => (),
-            LoxExpression::This { keyword: _ } => todo!(),
+            LoxExpression::This { keyword } => {
+                if self.current_class_kind == LoxClassType::None {
+                    return Err(LoxInterpreterError::ResolverImpossibleThisUsage(
+                        keyword.clone(),
+                    ));
+                }
+                self.resolve_local_variable(expression, keyword)?;
+            }
             LoxExpression::Super { keyword: _, method } => todo!(),
             LoxExpression::Variable { name } => {
                 if let Some(scope) = self.scopes.last() {
@@ -134,12 +182,17 @@ impl LoxResolver {
                 self.resolve_expression(value)?;
                 self.resolve_local_variable(expression, name)?;
             }
-            LoxExpression::Get { name, object } => todo!(),
+            LoxExpression::Get { name: _, object } => {
+                self.resolve_expression(object)?;
+            }
             LoxExpression::Set {
-                name,
+                name: _,
                 object,
                 value,
-            } => todo!(),
+            } => {
+                self.resolve_expression(value)?;
+                self.resolve_expression(object)?;
+            }
             LoxExpression::Call {
                 callee,
                 arguments,

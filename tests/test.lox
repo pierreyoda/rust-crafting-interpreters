@@ -128,3 +128,31 @@ f();
     print i; // expect: 0
   }
 }
+
+print "=== CLASSES ===";
+
+class Breakfast {
+  cook() {
+    print "Eggs a-fryin'!";
+  }
+
+  serve(who) {
+    print "Enjoy your breakfast, " + who + ".";
+  }
+}
+print Breakfast;
+var breakfast = Breakfast();
+print breakfast;
+breakfast.cook();
+breakfast.serve("test");
+
+class Cake {
+  taste() {
+    var adjective = "delicious";
+    print "The " + this.flavor + " cake is " + adjective + "!";
+  }
+}
+
+var cake = Cake();
+cake.flavor = "German chocolate";
+cake.taste(); // Prints "The German chocolate cake is delicious!".
