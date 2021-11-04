@@ -2,7 +2,7 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::{
     errors::{LoxInterpreterError, Result},
-    values::LoxValue,
+    values::LoxValueHandle,
 };
 
 pub type LoxEnvironmentHandle = Rc<RefCell<LoxEnvironment>>;
@@ -12,7 +12,7 @@ pub fn environment_handle_get_at_depth(
     handle: &LoxEnvironmentHandle,
     name: &str,
     distance: usize,
-) -> Result<LoxValue> {
+) -> Result<LoxValueHandle> {
     environment_handle_ancestor(handle, distance)
         .borrow()
         .get(name)
@@ -23,7 +23,7 @@ pub fn environment_handle_assign_at_depth(
     handle: &mut LoxEnvironmentHandle,
     name: &str,
     distance: usize,
-    value: LoxValue,
+    value: LoxValueHandle,
 ) {
     environment_handle_ancestor(handle, distance)
         .borrow_mut()
@@ -46,7 +46,7 @@ fn environment_handle_ancestor(
 /// A Lox environment stores variables within a certain scope.
 #[derive(Clone)]
 pub struct LoxEnvironment {
-    values: HashMap<String, LoxValue>,
+    values: HashMap<String, LoxValueHandle>,
     /// The enclosing environment, if any.
     outer: Option<LoxEnvironmentHandle>,
 }
@@ -60,12 +60,12 @@ impl LoxEnvironment {
     }
 
     /// Define a variable.
-    pub fn define(&mut self, name: String, value: LoxValue) {
+    pub fn define(&mut self, name: String, value: LoxValueHandle) {
         self.values.insert(name, value);
     }
 
     /// Assign to an existing variable.
-    pub fn assign(&mut self, name: &str, value: LoxValue) -> Result<()> {
+    pub fn assign(&mut self, name: &str, value: LoxValueHandle) -> Result<()> {
         if self.values.contains_key(name) {
             self.values.insert(name.to_string(), value);
             Ok(())
@@ -79,7 +79,7 @@ impl LoxEnvironment {
     }
 
     /// Retrieve a variable.
-    pub fn get(&self, name: &str) -> Result<LoxValue> {
+    pub fn get(&self, name: &str) -> Result<LoxValueHandle> {
         let local_value = self.values.get(name);
         if let Some(value) = local_value {
             Ok(value.clone())
@@ -92,7 +92,7 @@ impl LoxEnvironment {
         }
     }
 
-    fn get_deeply(name: &str, env: &LoxEnvironmentHandle) -> Result<LoxValue> {
+    fn get_deeply(name: &str, env: &LoxEnvironmentHandle) -> Result<LoxValueHandle> {
         let mut current = env.clone();
         loop {
             if let Some(value) = current.borrow().values.get(name).cloned() {

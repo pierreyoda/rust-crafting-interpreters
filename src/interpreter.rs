@@ -1,5 +1,9 @@
 use crate::{
-    errors::Result, expressions::LoxOperation, lexer::Lexer, parser::Parser, values::LoxValue,
+    errors::Result,
+    expressions::LoxOperation,
+    lexer::Lexer,
+    parser::Parser,
+    values::{LoxValue, LoxValueHandle},
 };
 
 use self::{
@@ -17,7 +21,7 @@ pub trait LoxInterpreter {
         Parser::from_tokens(lexer.get_tokens().clone()).parse()
     }
 
-    fn interpret(&mut self, operations: &[LoxOperation]) -> Result<LoxValue>;
+    fn interpret(&mut self, operations: &[LoxOperation]) -> Result<LoxValueHandle>;
 
     fn get_environment(&self) -> &LoxEnvironmentHandle;
 }
@@ -36,11 +40,11 @@ impl LoxTreeWalkInterpreter {
 }
 
 impl LoxInterpreter for LoxTreeWalkInterpreter {
-    fn interpret(&mut self, operations: &[LoxOperation]) -> Result<LoxValue> {
+    fn interpret(&mut self, operations: &[LoxOperation]) -> Result<LoxValueHandle> {
         for operation in operations {
             self.resolver.resolve(operation)?;
         }
-        let mut last_value = LoxValue::Nil;
+        let mut last_value = LoxValue::new(LoxValue::Nil);
         for operation in operations {
             last_value = self.resolver.get_evaluator_mut().evaluate(operation)?;
         }
@@ -167,6 +171,6 @@ variable = "after";
             .borrow()
             .get("variable")
             .unwrap();
-        assert!(variable.equals(&LoxValue::String("after".into())));
+        assert!(variable.borrow().equals(&LoxValue::String("after".into())));
     }
 }

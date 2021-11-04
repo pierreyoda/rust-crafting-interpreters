@@ -1,4 +1,4 @@
-use std::{borrow::Borrow, collections::HashMap, fmt, hash::Hash};
+use std::{cell::RefCell, collections::HashMap, fmt, rc::Rc};
 
 use crate::{
     errors::{LoxInterpreterError, Result},
@@ -10,7 +10,10 @@ use crate::{
 
 pub const LOX_NUMBER_VALUE_COMPARISON_EPSILON: f64 = f64::EPSILON;
 
-pub type LoxNativeFunctionExecutor = fn(&mut LoxEnvironmentHandle, &[LoxValue]) -> Result<LoxValue>;
+pub type LoxNativeFunctionExecutor =
+    fn(&mut LoxEnvironmentHandle, &[LoxValueHandle]) -> Result<LoxValueHandle>;
+
+pub type LoxValueHandle = Rc<RefCell<LoxValue>>;
 
 /// A runtime Lox value.
 #[derive(Clone)]
@@ -34,15 +37,19 @@ pub enum LoxValue {
     },
     Class {
         name: String,
-        methods: HashMap<String, LoxValue>,
+        methods: HashMap<String, LoxValueHandle>,
     },
     ClassInstance {
-        class: Box<LoxValue>,
-        fields: HashMap<String, LoxValue>,
+        class: LoxValueHandle,
+        fields: HashMap<String, LoxValueHandle>,
     },
 }
 
 impl LoxValue {
+    pub fn new(value: LoxValue) -> LoxValueHandle {
+        Rc::new(RefCell::new(value))
+    }
+
     /// Lox follows Ruby’s simple rule: false and nil are falsy,
     /// and everything else is truthy.
     pub fn is_truthy(&self) -> bool {
@@ -94,14 +101,14 @@ impl LoxValue {
         }
     }
 
-    pub fn class_find_method(&self, name: &str) -> Option<&LoxValue> {
+    pub fn class_find_method(&self, name: &str) -> Option<&LoxValueHandle> {
         match self {
             Self::Class { name: _, methods } => methods.get(name),
             _ => None,
         }
     }
 
-    pub fn class_method_bind_this(&self, instance: &Self) -> Option<Self> {
+    pub fn class_method_bind_this(&self, instance: &LoxValueHandle) -> Option<LoxValueHandle> {
         match self {
             Self::Function {
                 arity,
@@ -113,53 +120,60 @@ impl LoxValue {
                 environment
                     .borrow_mut()
                     .define("this".into(), instance.clone());
-                Some(LoxValue::Function {
+                Some(Self::new(LoxValue::Function {
                     arity: *arity,
                     closure: environment,
                     is_initializer: *is_initializer,
                     declaration: declaration.clone(),
-                })
+                }))
             }
             _ => None,
         }
     }
+}
 
-    pub fn instance_get_field(&self, name: &LoxToken) -> Result<Self> {
-        if let LoxValue::ClassInstance { class, fields } = self {
-            // find method
-            if let Some(method) = class.class_find_method(name.get_lexeme()) {
-                return Ok(method
-                    .class_method_bind_this(self)
-                    .expect("method value is a function"));
-            }
-            // find field
-            Ok(fields
-                .get(name.get_lexeme())
-                .map(|v| {
-                    let borrowed: &LoxValue = v.borrow();
-                    borrowed.clone()
-                })
-                .ok_or_else(|| {
-                    LoxInterpreterError::InterpreterUndefinedClassProperty(
-                        name.get_lexeme().clone(),
-                    )
-                })?)
-        } else {
-            Err(LoxInterpreterError::InterpreterCannotGetOrSetField(
-                name.clone(),
-            ))
+pub fn lox_value_handle_instance_get_field(
+    handle: &LoxValueHandle,
+    name: &LoxToken,
+) -> Result<LoxValueHandle> {
+    if let LoxValue::ClassInstance { class, fields } = &*handle.borrow() {
+        // find method
+        if let Some(method) = class.borrow().class_find_method(name.get_lexeme()) {
+            return Ok(method
+                .borrow()
+                .class_method_bind_this(handle)
+                .expect("method value is a function"));
         }
+        // find field
+        fields
+            .get(name.get_lexeme())
+            .ok_or_else(|| {
+                LoxInterpreterError::InterpreterUndefinedClassProperty(name.get_lexeme().clone())
+            })
+            .map(|handle| handle.clone())
+    } else {
+        Err(LoxInterpreterError::InterpreterCannotGetOrSetField(
+            name.clone(),
+        ))
     }
+}
 
-    pub fn instance_set_field(&mut self, name: &LoxToken, value: LoxValue) -> Result<Self> {
-        if let LoxValue::ClassInstance { class: _, fields } = self {
-            fields.insert(name.get_lexeme().clone(), value.clone());
-            Ok(value)
-        } else {
-            Err(LoxInterpreterError::InterpreterCannotGetOrSetField(
-                name.clone(),
-            ))
-        }
+pub fn lox_value_handle_instance_set_field(
+    handle: &mut LoxValueHandle,
+    name: &LoxToken,
+    value: LoxValueHandle,
+) -> Result<LoxValueHandle> {
+    if let LoxValue::ClassInstance {
+        class: _,
+        ref mut fields,
+    } = &mut *handle.borrow_mut()
+    {
+        fields.insert(name.get_lexeme().clone(), value.clone());
+        Ok(value)
+    } else {
+        Err(LoxInterpreterError::InterpreterCannotGetOrSetField(
+            name.clone(),
+        ))
     }
 }
 
@@ -186,7 +200,7 @@ impl LoxPrintable for LoxValue {
             } => format!("<native fn {}>", label),
             Self::Class { name, methods: _ } => name.clone(),
             Self::ClassInstance { class, fields: _ } => {
-                format!("{} instance", class.class_name().unwrap())
+                format!("{} instance", class.borrow().class_name().unwrap())
             }
         }
     }

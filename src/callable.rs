@@ -7,41 +7,40 @@ use crate::{
         tree_walk::{LoxTreeWalkEvaluator, LoxTreeWalkEvaluatorLocals},
     },
     lexer::LoxToken,
-    printer::LoxPrintable,
-    values::LoxValue,
+    values::{LoxValue, LoxValueHandle},
 };
 
-pub trait LoxCallable: LoxPrintable {
+pub trait LoxCallable {
     fn arity(&self) -> Option<usize>;
 
     fn call(
         &self,
         env: &mut LoxEnvironmentHandle,
         locals: &LoxTreeWalkEvaluatorLocals,
-        arguments: &[LoxValue],
+        arguments: &[LoxValueHandle],
         parenthesis: &LoxToken,
-    ) -> Result<LoxValue>;
+    ) -> Result<LoxValueHandle>;
 }
 
-impl LoxCallable for LoxValue {
+impl LoxCallable for LoxValueHandle {
     fn arity(&self) -> Option<usize> {
-        match self {
-            Self::Function {
+        match &*self.borrow() {
+            LoxValue::Function {
                 arity,
                 is_initializer: _,
                 declaration: _,
                 closure: _,
             } => Some(*arity),
-            Self::NativeFunction {
+            LoxValue::NativeFunction {
                 label: _,
                 arity,
                 execute: _,
             } => Some(*arity),
-            Self::Class {
+            LoxValue::Class {
                 name: _,
                 methods: _,
             } => {
-                if let Some(initializer) = self.class_find_method("init") {
+                if let Some(initializer) = self.borrow().class_find_method("init") {
                     initializer.arity()
                 } else {
                     Some(0)
@@ -55,12 +54,12 @@ impl LoxCallable for LoxValue {
         &self,
         env: &mut LoxEnvironmentHandle,
         locals: &LoxTreeWalkEvaluatorLocals,
-        arguments: &[LoxValue],
+        arguments: &[LoxValueHandle],
         parenthesis: &LoxToken,
-    ) -> Result<LoxValue> {
-        match self {
+    ) -> Result<LoxValueHandle> {
+        match &*self.borrow() {
             // TODO: adapt to other evaluators implementations (bytecode)
-            Self::Function {
+            LoxValue::Function {
                 arity,
                 is_initializer,
                 declaration,
@@ -79,8 +78,8 @@ impl LoxCallable for LoxValue {
                         function_env
                             .borrow_mut()
                             .define(parameter.get_lexeme().clone(), arguments[i].clone());
-                        // TODO: abstract over interpreter evaluator (bytecode)
                     }
+                    // TODO: abstract over interpreter evaluator (bytecode)
                     match LoxTreeWalkEvaluator::execute_block_statement(
                         body,
                         &mut function_env,
@@ -89,7 +88,7 @@ impl LoxCallable for LoxValue {
                         Ok(_) => environment_handle_get_at_depth(closure, "this", 0),
                         Err(why) => match why {
                             LoxInterpreterError::InterpreterReturn(value) => {
-                                if self.function_is_initializer() {
+                                if self.borrow().function_is_initializer() {
                                     environment_handle_get_at_depth(closure, "this", 0)
                                 } else {
                                     Ok(value)
@@ -100,7 +99,7 @@ impl LoxCallable for LoxValue {
                     }
                 }
             }
-            Self::NativeFunction {
+            LoxValue::NativeFunction {
                 label: _,
                 arity,
                 execute,
@@ -114,23 +113,22 @@ impl LoxCallable for LoxValue {
                     execute(env, arguments)
                 }
             }
-            Self::Class {
+            LoxValue::Class {
                 name: _,
                 methods: _,
             } => {
                 // class constructor (empty by default)
-                let instance = LoxValue::ClassInstance {
-                    class: Box::new(self.clone()),
+                let instance = LoxValue::new(LoxValue::ClassInstance {
+                    class: self.clone(),
                     fields: HashMap::new(),
-                };
+                });
                 // initializer (optional)
-                if let Some(initializer) = self.class_find_method("init") {
-                    initializer.class_method_bind_this(self).unwrap().call(
-                        env,
-                        locals,
-                        arguments,
-                        parenthesis,
-                    )?;
+                if let Some(initializer) = self.borrow().class_find_method("init") {
+                    initializer
+                        .borrow()
+                        .class_method_bind_this(self)
+                        .unwrap()
+                        .call(env, locals, arguments, parenthesis)?;
                 }
                 Ok(instance)
             }

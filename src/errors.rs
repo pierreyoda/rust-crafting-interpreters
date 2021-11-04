@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-use crate::{lexer::LoxToken, values::LoxValue};
+use crate::{lexer::LoxToken, values::LoxValueHandle};
 
 pub type Result<T> = std::result::Result<T, LoxInterpreterError>;
 
@@ -45,5 +45,5 @@ pub enum LoxInterpreterError {
     #[error("Expected {0} arguments but got {1}.")]
     InterpreterCallableWrongArity(usize, usize),
     #[error("Return value")]
-    InterpreterReturn(LoxValue), // TODO: find a better way
+    InterpreterReturn(LoxValueHandle), // TODO: find a better way
 }
