@@ -151,9 +151,28 @@ impl LoxTreeWalkEvaluator {
                 super_class,
                 methods,
             } => {
+                // super-class handling
+                let super_class_value = if super_class.is_noop() {
+                    LoxValue::new(LoxValue::Nil)
+                } else {
+                    let super_class_value = Self::evaluate_expression(super_class, env, locals)?;
+                    if super_class_value.borrow().is_class() {
+                        super_class_value
+                    } else {
+                        return Err(LoxInterpreterError::InterpreterSuperClassNotAClass(super_class.representation()));
+                    }
+                };
                 // allows references to the class inside its own methods
                 env.borrow_mut()
                     .define(name.get_lexeme().clone(), LoxValue::new(LoxValue::Nil));
+                // "super" handling
+                let class_env = if super_class.is_noop() {
+                    env.clone()
+                } else {
+                    let class_env = env.clone();
+                    class_env.borrow_mut().define("super".into(), super_class_value.clone());
+                    class_env
+                };
                 // methods
                 let mut evaluated_methods: HashMap<String, LoxValueHandle> = HashMap::new();
                 for method in methods {
@@ -164,15 +183,15 @@ impl LoxTreeWalkEvaluator {
                                 arity: parameters.len(),
                                 is_initializer: method_name.get_lexeme() == "init",
                                 declaration: Box::new(declaration),
-                                closure: env.clone(),
+                                closure: class_env.clone(),
                             });
                             evaluated_methods.insert(method_name.get_lexeme().clone(), function);
                         } else {
-                        panic!("interpreter: expected a function statement in class methods");
+                            panic!("interpreter: expected a function statement in class methods");
                         }
                 }
-                // class
-                let class = LoxValue::new(LoxValue::Class { name: name.get_lexeme().clone(), methods: evaluated_methods });
+                // class value
+                let class = LoxValue::new(LoxValue::Class { name: name.get_lexeme().clone(), super_class: super_class_value.clone(), methods: evaluated_methods });
                 env.borrow_mut()
                     .define(name.get_lexeme().clone(), class);
                 Ok(LoxValue::new(LoxValue::Nil))
@@ -363,7 +382,17 @@ impl LoxTreeWalkEvaluator {
             LoxExpression::This { keyword } => {
                 Self::lookup_variable(expression, keyword, env, locals)
             }
-            _ => todo!(),
+            LoxExpression::Super { keyword: _, method } => {
+                let distance = locals.get(&Self::compute_locals_key_from_expression(expression)).expect("interpreter evaluating LoxExpression::Super expects a defined superclass method.");
+                let super_class = environment_handle_get_at_depth(env, "super", *distance)?;
+                let super_class_method = super_class.borrow().class_find_method(method.get_lexeme()).expect("interpreter evaluating LoxExpression::Super expects a defined superclass method.");
+                let this_instance = environment_handle_get_at_depth(env, "this", distance - 1)?;
+                Ok(super_class_method
+                    .clone() // TODO: can we avoid this?
+                    .borrow()
+                    .class_method_bind_this(&this_instance)
+                    .expect("superclass method value is a function"))
+            }
         }
     }
 

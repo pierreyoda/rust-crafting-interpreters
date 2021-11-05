@@ -30,6 +30,12 @@ pub enum LoxInterpreterError {
     ResolverImpossibleInitializerReturn(LoxToken),
     #[error("Can't use 'this' outside of a class.")]
     ResolverImpossibleThisUsage(LoxToken),
+    #[error("A class can't inherit from itself.")]
+    ResolverRecursiveInheritance(String),
+    #[error("Can't use 'super' outside of a class.")]
+    ResolverSuperUseOutsideOfClass(),
+    #[error("Can't use 'super' in a class with no superclass.")]
+    ResolverSuperUseOutsideOfSubClass(),
     #[error("Unexpected operation: {0}")]
     InterpreterUnexpectedOperation(String),
     #[error("Not a number: {0}")]
@@ -44,6 +50,8 @@ pub enum LoxInterpreterError {
     InterpreterUndefinedClassProperty(String),
     #[error("Expected {0} arguments but got {1}.")]
     InterpreterCallableWrongArity(usize, usize),
+    #[error("Superclass must be a class.")]
+    InterpreterSuperClassNotAClass(String),
     #[error("Return value")]
     InterpreterReturn(LoxValueHandle), // TODO: find a better way
 }

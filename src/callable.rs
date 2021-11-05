@@ -39,6 +39,7 @@ impl LoxCallable for LoxValueHandle {
             LoxValue::Class {
                 name: _,
                 methods: _,
+                super_class: _,
             } => {
                 if let Some(initializer) = self.borrow().class_find_method("init") {
                     initializer.arity()
@@ -61,7 +62,7 @@ impl LoxCallable for LoxValueHandle {
             // TODO: adapt to other evaluators implementations (bytecode)
             LoxValue::Function {
                 arity,
-                is_initializer,
+                is_initializer: _,
                 declaration,
                 closure,
             } => {
@@ -116,6 +117,7 @@ impl LoxCallable for LoxValueHandle {
             LoxValue::Class {
                 name: _,
                 methods: _,
+                super_class: _,
             } => {
                 // class constructor (empty by default)
                 let instance = LoxValue::new(LoxValue::ClassInstance {

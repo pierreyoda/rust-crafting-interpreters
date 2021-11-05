@@ -12,6 +12,7 @@ use super::tree_walk::LoxTreeWalkEvaluator;
 enum LoxClassType {
     None,
     Class,
+    SubClass,
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -113,6 +114,29 @@ impl LoxResolver {
                 self.current_class_kind = LoxClassType::Class;
                 self.declare(name)?;
                 self.define(name);
+
+                // inheritance handling
+                if !super_class.is_noop() {
+                    if let LoxExpression::Variable {
+                        name: super_class_name,
+                    } = super_class
+                    {
+                        if super_class_name.get_lexeme() == name.get_lexeme() {
+                            return Err(LoxInterpreterError::ResolverRecursiveInheritance(
+                                name.get_lexeme().clone(),
+                            ));
+                        }
+                    } else {
+                        panic!("resolver.resolve_expression for class: super class must be a LoxExpression::Variable");
+                    }
+                    self.current_class_kind = LoxClassType::SubClass;
+                    self.resolve_expression(super_class)?;
+                    self.begin_scope();
+                    if let Some(scope) = self.scopes.last_mut() {
+                        scope.insert("super".into(), true);
+                    }
+                }
+
                 self.begin_scope();
                 if let Some(scope) = self.scopes.last_mut() {
                     scope.insert("this".into(), true);
@@ -134,6 +158,11 @@ impl LoxResolver {
                     )?;
                 }
                 self.end_scope();
+
+                if !super_class.is_noop() {
+                    self.end_scope();
+                }
+
                 self.current_class_kind = enclosing_class_kind;
             }
             LoxStatement::If {
@@ -167,7 +196,15 @@ impl LoxResolver {
                 }
                 self.resolve_local_variable(expression, keyword)?;
             }
-            LoxExpression::Super { keyword: _, method } => todo!(),
+            LoxExpression::Super { keyword, method: _ } => match &self.current_class_kind {
+                LoxClassType::None => {
+                    return Err(LoxInterpreterError::ResolverSuperUseOutsideOfClass())
+                }
+                LoxClassType::Class => {
+                    return Err(LoxInterpreterError::ResolverSuperUseOutsideOfSubClass())
+                }
+                _ => self.resolve_local_variable(expression, keyword)?,
+            },
             LoxExpression::Variable { name } => {
                 if let Some(scope) = self.scopes.last() {
                     if scope.get(name.get_lexeme()) == Some(&false) {

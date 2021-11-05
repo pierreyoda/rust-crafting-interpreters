@@ -37,6 +37,7 @@ pub enum LoxValue {
     },
     Class {
         name: String,
+        super_class: LoxValueHandle,
         methods: HashMap<String, LoxValueHandle>,
     },
     ClassInstance {
@@ -50,6 +51,10 @@ impl LoxValue {
         Rc::new(RefCell::new(value))
     }
 
+    pub fn is_nil(&self) -> bool {
+        matches!(self, Self::Nil)
+    }
+
     /// Lox follows Ruby’s simple rule: false and nil are falsy,
     /// and everything else is truthy.
     pub fn is_truthy(&self) -> bool {
@@ -58,6 +63,17 @@ impl LoxValue {
             Self::Boolean(boolean) => *boolean,
             _ => true,
         }
+    }
+
+    pub fn is_class(&self) -> bool {
+        matches!(
+            self,
+            Self::Class {
+                name: _,
+                super_class: _,
+                methods: _,
+            }
+        )
     }
 
     pub fn equals(&self, other: &Self) -> bool {
@@ -96,15 +112,30 @@ impl LoxValue {
 
     pub fn class_name(&self) -> Option<&String> {
         match self {
-            Self::Class { name, methods: _ } => Some(name),
+            Self::Class {
+                name,
+                super_class: _,
+                methods: _,
+            } => Some(name),
             _ => None,
         }
     }
 
-    pub fn class_find_method(&self, name: &str) -> Option<&LoxValueHandle> {
-        match self {
-            Self::Class { name: _, methods } => methods.get(name),
-            _ => None,
+    pub fn class_find_method(&self, name: &str) -> Option<LoxValueHandle> {
+        if let Self::Class {
+            name: _,
+            super_class,
+            methods,
+        } = self
+        {
+            let borrowed = super_class.borrow();
+            if !borrowed.is_nil() {
+                borrowed.class_find_method(name)
+            } else {
+                methods.get(name).cloned()
+            }
+        } else {
+            None
         }
     }
 
@@ -136,6 +167,7 @@ pub fn lox_value_handle_instance_get_field(
     handle: &LoxValueHandle,
     name: &LoxToken,
 ) -> Result<LoxValueHandle> {
+    dbg!(name.get_lexeme());
     if let LoxValue::ClassInstance { class, fields } = &*handle.borrow() {
         // find method
         if let Some(method) = class.borrow().class_find_method(name.get_lexeme()) {
@@ -198,7 +230,11 @@ impl LoxPrintable for LoxValue {
                 arity: _,
                 execute: _,
             } => format!("<native fn {}>", label),
-            Self::Class { name, methods: _ } => name.clone(),
+            Self::Class {
+                name,
+                super_class: _,
+                methods: _,
+            } => name.clone(),
             Self::ClassInstance { class, fields: _ } => {
                 format!("{} instance", class.borrow().class_name().unwrap())
             }

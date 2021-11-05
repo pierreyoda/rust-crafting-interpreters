@@ -173,21 +173,34 @@ impl Parser {
     }
 
     fn handle_class_declaration(&mut self) -> Result<LoxOperation> {
+        // name
         let name = self.consume_identifier("Expect class name.")?.clone();
+        // superclass (optional)
+        let super_class = if self.match_kinds(&[LoxTokenType::Less]) {
+            let _ = self.consume_identifier("Expect superclass name.")?;
+            LoxExpression::Variable {
+                name: self.peek_previous().clone(),
+            }
+        } else {
+            LoxExpression::NoOp
+        };
+        // methods
         let _ = self.consume_kind(&LoxTokenType::LeftBrace, "Expect '{' before class body.")?;
         let mut methods = vec![];
         while !self.check(&LoxTokenType::RightBrace) && !self.is_at_end() {
             methods.push(self.handle_function_declaration("method")?.as_statement()?);
         }
         let _ = self.consume_kind(&LoxTokenType::RightBrace, "Expect '}' before class body.")?;
+        // AST node
         Ok(LoxOperation::Statement(LoxStatement::Class {
             name,
             methods,
-            super_class: LoxExpression::NoOp,
+            super_class,
         }))
     }
 
     fn handle_function_declaration(&mut self, kind: &str) -> Result<LoxOperation> {
+        // name
         let name = self
             .consume_identifier(format!("Expect {} name.", kind).as_str())?
             .clone();
@@ -195,6 +208,7 @@ impl Parser {
             &LoxTokenType::LeftParenthesis,
             format!("Expect '(' after {} name.", kind).as_str(),
         )?;
+        // parameters
         let mut parameters = vec![];
         if !self.check(&LoxTokenType::RightParenthesis) {
             parameters.push(self.consume_identifier("Expect parameter name.")?.clone());
@@ -216,11 +230,13 @@ impl Parser {
             &LoxTokenType::RightParenthesis,
             "Expect ')' after parameters.",
         )?;
+        // body
         let _ = self.consume_kind(
             &LoxTokenType::LeftBrace,
             format!("Expect '{{' before {} body.", kind).as_str(),
         )?;
         let body = self.handle_statements_block()?;
+        // AST node
         Ok(LoxOperation::Statement(LoxStatement::Function {
             name,
             parameters,
@@ -595,6 +611,13 @@ impl Parser {
         } else if self.match_number() || self.match_string() {
             let value = self.peek_previous().build_literal().unwrap();
             Ok(LoxExpression::Literal { value })
+        } else if self.match_kinds(&[LoxTokenType::Super]) {
+            let keyword = self.peek_previous().clone();
+            let _ = self.consume_kind(&LoxTokenType::Semicolon, "Expect '.' after 'super'.")?;
+            let method = self
+                .consume_identifier("Expect superclass method name.")?
+                .clone();
+            Ok(LoxExpression::Super { keyword, method })
         } else if self.match_kinds(&[LoxTokenType::This]) {
             Ok(LoxExpression::This {
                 keyword: self.peek_previous().clone(),

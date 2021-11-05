@@ -131,6 +131,19 @@ f();
 
 print "=== CLASSES ===";
 
+class Doughnut {
+  cook() {
+    print "Fry until golden brown.";
+  }
+}
+class BostonCream < Doughnut {
+  cook() {
+    super.cook();
+    print "Pipe full of custard and coat with chocolate.";
+  }
+}
+BostonCream().cook();
+
 class Breakfast {
   cook() {
     print "Eggs a-fryin'!";
@@ -146,25 +159,25 @@ print breakfast;
 breakfast.cook();
 breakfast.serve("test");
 
-class Cake {
-  taste() {
-    var adjective = "delicious";
-    print "The " + this.flavor + " cake is " + adjective + "!";
-  }
-}
+// class Cake {
+//   taste() {
+//     var adjective = "delicious";
+//     print "The " + this.flavor + " cake is " + adjective + "!";
+//   }
+// }
 
-var cake = Cake();
-cake.flavor = "German chocolate";
-cake.taste(); // Prints "The German chocolate cake is delicious!".
+// var cake = Cake();
+// cake.flavor = "German chocolate";
+// cake.taste(); // Prints "The German chocolate cake is delicious!".
 
-class WithInitializer {
-    init(value) {
-        this.value = value;
-    }
+// class WithInitializer {
+//     init(value) {
+//         this.value = value;
+//     }
 
-    display() {
-        print this.value;
-    }
-}
-var withInitializer = WithInitializer();
-withInitializer.display();
+//     display() {
+//         print this.value;
+//     }
+// }
+// var withInitializer = WithInitializer();
+// withInitializer.display();
