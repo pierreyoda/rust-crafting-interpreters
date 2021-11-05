@@ -144,6 +144,23 @@ counter(); // 2
 (; (call counter))
 (; (call counter))"#,
             ),
+            (
+                r#"
+class Cake {
+    taste() {
+        var adjective = "delicious";
+        print "The " + this.flavor + " cake is " + adjective + "!";
+    }
+}
+
+var cake = Cake();
+cake.flavor = "German chocolate";
+cake.taste();
+                "#, r#"(class Cake (fun taste () (var adjective = delicious)(print (+ (+ (+ (+ The  (. this flavor))  cake is ) adjective) !))))
+(var cake = (call Cake))
+(; (= cake flavor German chocolate))
+(; (call (. cake taste)))"#
+            ),
         ];
 
         let interpreter = LoxTreeWalkInterpreter::new();

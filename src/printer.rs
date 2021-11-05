@@ -40,36 +40,48 @@ impl LoxPrintable for LoxExpression {
                 callee,
                 parenthesis: _,
                 arguments,
-            } => {
-                let arguments_fragments = arguments
-                    .iter()
-                    .map(|argument| LoxPrintableFragment::Expression(argument))
-                    .collect();
-                let fragments = [
+            } => debug_parenthesize_fragments(
+                [
                     vec![
                         LoxPrintableFragment::Arbitrary("call".into()),
                         LoxPrintableFragment::Expression(callee),
                     ],
-                    arguments_fragments,
+                    arguments
+                        .iter()
+                        .map(|argument| LoxPrintableFragment::Expression(argument))
+                        .collect(),
                 ]
-                .concat();
-                debug_parenthesize_fragments(fragments.as_slice())
-            }
-            Self::Get { object, name } => todo!(),
+                .concat()
+                .as_slice(),
+            ),
+            Self::Get { object, name } => debug_parenthesize_fragments(&[
+                LoxPrintableFragment::Arbitrary(".".into()),
+                LoxPrintableFragment::Expression(object),
+                LoxPrintableFragment::Token(name),
+            ]),
+            Self::Set {
+                object,
+                name,
+                value,
+            } => debug_parenthesize_fragments(&[
+                LoxPrintableFragment::Arbitrary("=".into()),
+                LoxPrintableFragment::Expression(object),
+                LoxPrintableFragment::Token(name),
+                LoxPrintableFragment::Expression(value),
+            ]),
             Self::Group { expression } => debug_parenthesize("group", &[expression.as_ref()]),
             Self::Literal { value } => value.representation(),
             Self::Logical {
                 left,
                 operator,
                 right,
-            } => todo!(),
-            Self::Set {
-                object,
-                name,
-                value,
-            } => todo!(),
+            } => debug_parenthesize_fragments(&[
+                LoxPrintableFragment::Token(operator),
+                LoxPrintableFragment::Expression(left),
+                LoxPrintableFragment::Expression(right),
+            ]),
             Self::Super { keyword, method } => todo!(),
-            Self::This { keyword } => "this".to_string(),
+            Self::This { keyword: _ } => "this".to_string(),
             Self::Unary { operator, right } => {
                 debug_parenthesize(operator.get_lexeme().as_str(), &[right.as_ref()])
             }
@@ -94,7 +106,17 @@ impl LoxPrintable for LoxStatement {
                 name,
                 super_class,
                 methods,
-            } => todo!(),
+            } => {
+                let mut output = format!("(class {}", name.get_lexeme());
+                if !super_class.is_noop() {
+                    output += format!(" < {}", super_class.representation()).as_str();
+                }
+                for method in methods {
+                    output += format!(" {}", method.representation()).as_str();
+                }
+                output += ")";
+                output
+            }
             Self::Expression { expression } => debug_parenthesize_fragments(&[
                 LoxPrintableFragment::Arbitrary(";".into()),
                 LoxPrintableFragment::Expression(expression),

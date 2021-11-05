@@ -157,12 +157,12 @@ impl LoxTreeWalkEvaluator {
                 // methods
                 let mut evaluated_methods: HashMap<String, LoxValueHandle> = HashMap::new();
                 for method in methods {
-                    if let LoxStatement::Function { name: method_name, parameters, body } = method {
-                            let borrowed_method: &LoxStatement = method.into();
+                    if let LoxStatement::Function { name: method_name, parameters, body: _ } = method {
+                            let borrowed_method: &LoxStatement = method;
                             let declaration = borrowed_method.clone();
                             let function = LoxValue::new(LoxValue::Function {
                                 arity: parameters.len(),
-                                is_initializer: name.get_lexeme() == "this",
+                                is_initializer: method_name.get_lexeme() == "init",
                                 declaration: Box::new(declaration),
                                 closure: env.clone(),
                             });
@@ -331,7 +331,7 @@ impl LoxTreeWalkEvaluator {
                     );
                 } else {
                     env.borrow_mut()
-                        .assign(name.get_lexeme(), evaluated_value.clone());
+                        .assign(name.get_lexeme(), evaluated_value.clone())?;
                 }
                 Ok(evaluated_value)
             }

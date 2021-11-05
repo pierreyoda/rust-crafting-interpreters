@@ -258,8 +258,8 @@ impl LoxResolver {
     ) -> Result<()> {
         for (i, scope) in self.scopes.iter().enumerate().rev() {
             if scope.contains_key(name.get_lexeme()) {
-                // TODO:
-                // self.interpreter.resolve(expression, self.scopes.len() - 1 - i)?;
+                self.evaluator
+                    .resolve_variable(expression, self.scopes.len() - 1 - i);
             }
         }
         Ok(())

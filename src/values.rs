@@ -109,25 +109,25 @@ impl LoxValue {
     }
 
     pub fn class_method_bind_this(&self, instance: &LoxValueHandle) -> Option<LoxValueHandle> {
-        match self {
-            Self::Function {
-                arity,
-                is_initializer,
-                closure,
-                declaration,
-            } => {
-                let environment = LoxEnvironment::new(Some(closure.clone()));
-                environment
-                    .borrow_mut()
-                    .define("this".into(), instance.clone());
-                Some(Self::new(LoxValue::Function {
-                    arity: *arity,
-                    closure: environment,
-                    is_initializer: *is_initializer,
-                    declaration: declaration.clone(),
-                }))
-            }
-            _ => None,
+        if let Self::Function {
+            arity,
+            is_initializer,
+            closure,
+            declaration,
+        } = self
+        {
+            let environment = LoxEnvironment::new(Some(closure.clone()));
+            environment
+                .borrow_mut()
+                .define("this".into(), instance.clone());
+            Some(Self::new(LoxValue::Function {
+                arity: *arity,
+                closure: environment,
+                is_initializer: *is_initializer,
+                declaration: declaration.clone(),
+            }))
+        } else {
+            None
         }
     }
 }
