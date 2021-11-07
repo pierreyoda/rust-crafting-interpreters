@@ -4,7 +4,7 @@ use crate::{
     errors::{LoxInterpreterError, Result},
     interpreter::{
         environment::{environment_handle_get_at_depth, LoxEnvironment, LoxEnvironmentHandle},
-        tree_walk::{LoxTreeWalkEvaluator, LoxTreeWalkEvaluatorLocals},
+        tree_walk::{LoxLinePrinterInstance, LoxTreeWalkEvaluator, LoxTreeWalkEvaluatorLocals},
     },
     lexer::LoxToken,
     values::{LoxValue, LoxValueHandle},
@@ -19,6 +19,7 @@ pub trait LoxCallable {
         locals: &LoxTreeWalkEvaluatorLocals,
         arguments: &[LoxValueHandle],
         parenthesis: &LoxToken,
+        output: &mut LoxLinePrinterInstance,
     ) -> Result<LoxValueHandle>;
 }
 
@@ -57,6 +58,7 @@ impl LoxCallable for LoxValueHandle {
         locals: &LoxTreeWalkEvaluatorLocals,
         arguments: &[LoxValueHandle],
         parenthesis: &LoxToken,
+        output: &mut LoxLinePrinterInstance,
     ) -> Result<LoxValueHandle> {
         match &*self.borrow() {
             // TODO: adapt to other evaluators implementations (bytecode)
@@ -85,6 +87,7 @@ impl LoxCallable for LoxValueHandle {
                         body,
                         &mut function_env,
                         locals,
+                        output,
                     ) {
                         Ok(_) => environment_handle_get_at_depth(closure, "this", 0),
                         Err(why) => match why {
@@ -130,7 +133,7 @@ impl LoxCallable for LoxValueHandle {
                         .borrow()
                         .class_method_bind_this(self)
                         .unwrap()
-                        .call(env, locals, arguments, parenthesis)?;
+                        .call(env, locals, arguments, parenthesis, output)?;
                 }
                 Ok(instance)
             }

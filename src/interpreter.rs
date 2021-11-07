@@ -7,7 +7,9 @@ use crate::{
 };
 
 use self::{
-    environment::LoxEnvironmentHandle, resolver::LoxResolver, tree_walk::LoxTreeWalkEvaluator,
+    environment::LoxEnvironmentHandle,
+    resolver::LoxResolver,
+    tree_walk::{LoxLinePrinter, LoxLinePrinterInstance, LoxTreeWalkEvaluator},
 };
 
 pub mod builtins;
@@ -30,9 +32,22 @@ pub struct LoxTreeWalkInterpreter {
     resolver: LoxResolver,
 }
 
+pub struct StdOutPrinter;
+
+impl LoxLinePrinter for StdOutPrinter {
+    fn print(&mut self, output: String) {
+        println!("{}", output);
+    }
+
+    fn history(&self) -> Option<&[String]> {
+        None
+    }
+}
+
 impl LoxTreeWalkInterpreter {
-    pub fn new() -> Self {
-        let evaluator = LoxTreeWalkEvaluator::new();
+    pub fn new(printer: Option<LoxLinePrinterInstance>) -> Self {
+        let evaluator =
+            LoxTreeWalkEvaluator::new(printer.unwrap_or_else(|| Box::new(StdOutPrinter)));
         Self {
             resolver: LoxResolver::new(evaluator),
         }
@@ -163,7 +178,7 @@ cake.taste();
             ),
         ];
 
-        let interpreter = LoxTreeWalkInterpreter::new();
+        let interpreter = LoxTreeWalkInterpreter::new(None);
         for (source, expected) in test_data {
             let parsed = interpreter.parse(source.to_string()).unwrap();
             assert_eq!(operations_representation(&parsed), expected);
@@ -176,7 +191,7 @@ cake.taste();
 var variable = "before";
 variable = "after";
         "#;
-        let mut interpreter = LoxTreeWalkInterpreter::new();
+        let mut interpreter = LoxTreeWalkInterpreter::new(None);
         let operations = interpreter.parse(source.to_string()).unwrap();
         assert_eq!(
             operations_representation(&operations),

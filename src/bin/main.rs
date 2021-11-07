@@ -31,7 +31,7 @@ fn main() -> Result<()> {
         let input_file: String = matches.value_of_t("INPUT").unwrap(); // TODO: errors handling
         let input_filepath = Path::new(&input_file);
         let input_source = read_to_string(input_filepath).map_err(LoxInterpreterError::IOError)?;
-        let mut interpreter = LoxTreeWalkInterpreter::new();
+        let mut interpreter = LoxTreeWalkInterpreter::new(None);
         let parsed_operations = interpreter.parse(input_source)?;
         let _ = interpreter.interpret(&parsed_operations)?;
         Ok(())

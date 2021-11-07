@@ -23,19 +23,28 @@ use super::{
 
 pub type LoxTreeWalkEvaluatorLocals = HashMap<u64, usize>;
 
+pub trait LoxLinePrinter {
+    fn print(&mut self, output: String);
+    fn history(&self) -> Option<&[String]>;
+}
+
+pub type LoxLinePrinterInstance = Box<dyn LoxLinePrinter>;
+
 pub struct LoxTreeWalkEvaluator {
     globals: LoxEnvironmentHandle,
+    printer: LoxLinePrinterInstance,
     locals: LoxTreeWalkEvaluatorLocals,
 }
 
 impl LoxTreeWalkEvaluator {
-    pub fn new() -> Self {
+    pub fn new(printer: LoxLinePrinterInstance) -> Self {
         let globals = LoxEnvironment::new(None);
         globals
             .borrow_mut()
             .define("clock".into(), build_lox_clock_builtin());
         Self {
             globals,
+            printer,
             locals: HashMap::new(),
         }
     }
@@ -47,12 +56,18 @@ impl LoxTreeWalkEvaluator {
     pub fn evaluate(&mut self, operation: &LoxOperation) -> Result<LoxValueHandle> {
         match operation {
             LoxOperation::Invalid => Ok(LoxValue::new(LoxValue::Nil)),
-            LoxOperation::Expression(expression) => {
-                Self::evaluate_expression(expression, &mut self.globals, &self.locals)
-            }
-            LoxOperation::Statement(statement) => {
-                Self::evaluate_statement(statement, &mut self.globals, &self.locals)
-            }
+            LoxOperation::Expression(expression) => Self::evaluate_expression(
+                expression,
+                &mut self.globals,
+                &self.locals,
+                &mut self.printer,
+            ),
+            LoxOperation::Statement(statement) => Self::evaluate_statement(
+                statement,
+                &mut self.globals,
+                &self.locals,
+                &mut self.printer,
+            ),
         }
     }
 
@@ -84,43 +99,44 @@ impl LoxTreeWalkEvaluator {
         statement: &LoxStatement,
         env: &mut LoxEnvironmentHandle,
         locals: &LoxTreeWalkEvaluatorLocals,
+        output: &mut LoxLinePrinterInstance,
     ) -> Result<LoxValueHandle> {
         match statement {
             LoxStatement::NoOp => Ok(LoxValue::new(LoxValue::Nil)),
             LoxStatement::Expression { expression } => {
-                Self::evaluate_expression(expression, env, locals)?;
+                Self::evaluate_expression(expression, env, locals, output)?;
                 Ok(LoxValue::new(LoxValue::Nil))
             }
             LoxStatement::Print { expression } => {
-                let value = Self::evaluate_expression(expression, env, locals)?;
-                println!("{}", value.borrow().representation());
+                let value = Self::evaluate_expression(expression, env, locals, output)?;
+                output.print(value.borrow().representation());
                 Ok(LoxValue::new(LoxValue::Nil))
             }
             LoxStatement::Variable { name, initializer } => {
-                let value = Self::evaluate_expression(initializer, env, locals)?;
+                let value = Self::evaluate_expression(initializer, env, locals, output)?;
                 env.borrow_mut().define(name.get_lexeme().clone(), value);
                 Ok(LoxValue::new(LoxValue::Nil))
             }
             LoxStatement::Block { statements } => {
                 let mut block_env = LoxEnvironment::new(Some(env.clone()));
-                Self::execute_block_statement(statements, &mut block_env, locals)
+                Self::execute_block_statement(statements, &mut block_env, locals, output)
             }
             LoxStatement::If {
                 condition,
                 then_branch,
                 else_branch,
             } => {
-                let condition_value = Self::evaluate_expression(condition, env, locals)?;
+                let condition_value = Self::evaluate_expression(condition, env, locals, output)?;
                 if condition_value.borrow().is_truthy() {
-                    Self::evaluate_statement(then_branch, env, locals)?;
+                    Self::evaluate_statement(then_branch, env, locals, output)?;
                 } else if !else_branch.is_noop() {
-                    Self::evaluate_statement(else_branch, env, locals)?;
+                    Self::evaluate_statement(else_branch, env, locals, output)?;
                 }
                 Ok(LoxValue::new(LoxValue::Nil))
             }
             LoxStatement::While { condition, body } => {
-                while Self::evaluate_expression(condition, env, locals)?.borrow().is_truthy() {
-                    let _ = Self::evaluate_statement(body, env, locals)?;
+                while Self::evaluate_expression(condition, env, locals, output)?.borrow().is_truthy() {
+                    let _ = Self::evaluate_statement(body, env, locals, output)?;
                 }
                 Ok(LoxValue::new(LoxValue::Nil))
             }
@@ -142,7 +158,7 @@ impl LoxTreeWalkEvaluator {
                 let returned_value = if value.is_noop() {
                     LoxValue::new(LoxValue::Nil)
                 } else {
-                    Self::evaluate_expression(value, env, locals)?
+                    Self::evaluate_expression(value, env, locals, output)?
                 };
                 Err(LoxInterpreterError::InterpreterReturn(returned_value))
             }
@@ -155,7 +171,7 @@ impl LoxTreeWalkEvaluator {
                 let super_class_value = if super_class.is_noop() {
                     LoxValue::new(LoxValue::Nil)
                 } else {
-                    let super_class_value = Self::evaluate_expression(super_class, env, locals)?;
+                    let super_class_value = Self::evaluate_expression(super_class, env, locals, output)?;
                     if super_class_value.borrow().is_class() {
                         super_class_value
                     } else {
@@ -208,9 +224,10 @@ impl LoxTreeWalkEvaluator {
         statements: &[LoxStatement],
         env: &mut LoxEnvironmentHandle,
         locals: &LoxTreeWalkEvaluatorLocals,
+        output: &mut LoxLinePrinterInstance,
     ) -> Result<LoxValueHandle> {
         for statement in statements {
-            Self::evaluate_statement(statement, env, locals)?;
+            Self::evaluate_statement(statement, env, locals, output)?;
         }
         Ok(LoxValue::new(LoxValue::Nil))
     }
@@ -219,15 +236,16 @@ impl LoxTreeWalkEvaluator {
         expression: &LoxExpression,
         env: &mut LoxEnvironmentHandle,
         locals: &LoxTreeWalkEvaluatorLocals,
+        output: &mut LoxLinePrinterInstance,
     ) -> Result<LoxValueHandle> {
         match expression {
             LoxExpression::NoOp => Ok(LoxValue::new(LoxValue::Nil)),
             LoxExpression::Literal { value } => Ok(Self::evaluate_literal(value)),
             LoxExpression::Group { expression: expr } => {
-                Self::evaluate_expression(expr, env, locals)
+                Self::evaluate_expression(expr, env, locals, output)
             }
             LoxExpression::Unary { operator, right } => {
-                let right_value = Self::evaluate_expression(right, env, locals)?;
+                let right_value = Self::evaluate_expression(right, env, locals, output)?;
                 match operator.get_kind() {
                     // number inversion
                     LoxTokenType::Minus => Ok(LoxValue::new(LoxValue::Number(
@@ -249,8 +267,8 @@ impl LoxTreeWalkEvaluator {
                 right,
             } => {
                 let (left_value, right_value) = (
-                    Self::evaluate_expression(left, env, locals)?,
-                    Self::evaluate_expression(right, env, locals)?,
+                    Self::evaluate_expression(left, env, locals, output)?,
+                    Self::evaluate_expression(right, env, locals, output)?,
                 );
                 match operator.get_kind() {
                     // subtraction
@@ -312,20 +330,20 @@ impl LoxTreeWalkEvaluator {
                 operator,
                 right,
             } => {
-                let left_value = Self::evaluate_expression(left, env, locals)?;
+                let left_value = Self::evaluate_expression(left, env, locals, output)?;
                 match operator.get_kind() {
                     LoxTokenType::Or => {
                         if left_value.borrow().is_truthy() {
                             Ok(left_value)
                         } else {
-                            Self::evaluate_expression(right, env, locals)
+                            Self::evaluate_expression(right, env, locals, output)
                         }
                     }
                     LoxTokenType::And => {
                         if !left_value.borrow().is_truthy() {
                             Ok(left_value)
                         } else {
-                            Self::evaluate_expression(right, env, locals)
+                            Self::evaluate_expression(right, env, locals, output)
                         }
                     }
                     _ => Err(LoxInterpreterError::InterpreterUnexpectedOperation(
@@ -338,7 +356,7 @@ impl LoxTreeWalkEvaluator {
                 Ok(value)
             }
             LoxExpression::Assign { name, value } => {
-                let evaluated_value = Self::evaluate_expression(value, env, locals)?;
+                let evaluated_value = Self::evaluate_expression(value, env, locals, output)?;
                 if let Some(distance) =
                     locals.get(&Self::compute_locals_key_from_expression(expression))
                 {
@@ -355,7 +373,7 @@ impl LoxTreeWalkEvaluator {
                 Ok(evaluated_value)
             }
             LoxExpression::Get { name, object } => {
-                let object_value = Self::evaluate_expression(object, env, locals)?;
+                let object_value = Self::evaluate_expression(object, env, locals, output)?;
                 lox_value_handle_instance_get_field(&object_value, name)
             }
             LoxExpression::Set {
@@ -363,8 +381,8 @@ impl LoxTreeWalkEvaluator {
                 object,
                 value,
             } => {
-                let mut object_value = Self::evaluate_expression(object, env, locals)?;
-                let evaluated_value = Self::evaluate_expression(value, env, locals)?;
+                let mut object_value = Self::evaluate_expression(object, env, locals, output)?;
+                let evaluated_value = Self::evaluate_expression(value, env, locals, output)?;
                 lox_value_handle_instance_set_field(&mut object_value, name, evaluated_value)
             }
             LoxExpression::Call {
@@ -372,12 +390,13 @@ impl LoxTreeWalkEvaluator {
                 arguments,
                 parenthesis,
             } => {
-                let callee_value = Self::evaluate_expression(callee, env, locals)?;
+                let callee_value = Self::evaluate_expression(callee, env, locals, output)?;
                 let mut arguments_values = Vec::with_capacity(arguments.len());
                 for argument in arguments {
-                    arguments_values.push(Self::evaluate_expression(argument, env, locals)?);
+                    arguments_values
+                        .push(Self::evaluate_expression(argument, env, locals, output)?);
                 }
-                callee_value.call(env, locals, &arguments_values, parenthesis)
+                callee_value.call(env, locals, &arguments_values, parenthesis, output)
             }
             LoxExpression::This { keyword } => {
                 Self::lookup_variable(expression, keyword, env, locals)
