@@ -1,3 +1,4 @@
+pub mod bytecode;
 pub mod callable;
 pub mod errors;
 pub mod expressions;

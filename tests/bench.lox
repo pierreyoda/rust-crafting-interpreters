@@ -1,0 +1,12 @@
+// performances on my Macbook Pro 16 (2019)
+// - 2021-11-09: 360 seconds in release mode with the tree-walk interpreter
+
+fun fib(n) {
+  if (n < 2) return n;
+  return fib(n - 1) + fib(n - 2);
+}
+
+var before = clock();
+print fib(40);
+var after = clock();
+print after - before;

@@ -21,6 +21,7 @@ pub fn discover_tests<P: AsRef<Path>>(root: P) -> Vec<PathBuf> {
     paths
 }
 
+#[derive(Clone, Debug)]
 pub enum LoxAutoTestAssertion {
     ExpectOutput(String),
 }
@@ -37,6 +38,7 @@ impl LoxAutoTestAssertion {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct LoxAutoTestSuite {
     code: String,
     path: PathBuf,
@@ -128,7 +130,7 @@ impl LoxAutoTestHarness {
 mod tests {
     use std::fs::File;
     use std::io::Read;
-    use std::path::{Path, PathBuf};
+    use std::path::Path;
 
     use super::{discover_tests, LoxAutoTestHarness, LoxAutoTestSuite};
 

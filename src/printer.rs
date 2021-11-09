@@ -80,7 +80,10 @@ impl LoxPrintable for LoxExpression {
                 LoxPrintableFragment::Expression(left),
                 LoxPrintableFragment::Expression(right),
             ]),
-            Self::Super { keyword, method } => todo!(),
+            Self::Super {
+                keyword: _,
+                method: _,
+            } => "super".to_string(),
             Self::This { keyword: _ } => "this".to_string(),
             Self::Unary { operator, right } => {
                 debug_parenthesize(operator.get_lexeme().as_str(), &[right.as_ref()])
