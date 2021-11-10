@@ -1,12 +1,19 @@
 use self::values::{LoxValueArray, LoxValueNumber};
 
+pub mod compiler;
 pub mod debug;
 pub mod values;
+pub mod vm;
 
 #[derive(Clone, Debug)]
 pub enum LoxBytecodeOpcode {
     Value(usize),
     Constant,
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Negate,
     Return,
 }
 
@@ -57,6 +64,10 @@ impl LoxBytecodeChunk {
 
     pub fn get_instruction(&self, offset: usize) -> Option<&LoxBytecodeOpcode> {
         self.code.get(offset)
+    }
+
+    pub fn get_instructions(&self) -> &[LoxBytecodeOpcode] {
+        &self.code
     }
 
     pub fn get_line(&self, offset: usize) -> Option<usize> {

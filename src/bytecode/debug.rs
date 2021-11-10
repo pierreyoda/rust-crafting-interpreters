@@ -13,6 +13,11 @@ pub fn disassemble_instruction(chunk: &LoxBytecodeChunk, offset: usize) -> usize
     if let Some(instruction) = chunk.get_instruction(offset) {
         match instruction {
             LoxBytecodeOpcode::Constant => constant_instruction("OP_CONSTANT", chunk, offset),
+            LoxBytecodeOpcode::Add => simple_instruction("OP_ADD", offset),
+            LoxBytecodeOpcode::Subtract => simple_instruction("OP_SUBTRACT", offset),
+            LoxBytecodeOpcode::Multiply => simple_instruction("OP_MULTIPLY", offset),
+            LoxBytecodeOpcode::Divide => simple_instruction("OP_DIVIDE", offset),
+            LoxBytecodeOpcode::Negate => simple_instruction("OP_NEGATE", offset),
             LoxBytecodeOpcode::Return => simple_instruction("OP_RETURN", offset),
             _ => {
                 print!("Unknown opcode {:?}", instruction);
@@ -41,6 +46,6 @@ fn constant_instruction(name: &str, chunk: &LoxBytecodeChunk, offset: usize) -> 
     offset + 2
 }
 
-fn print_value(value: &LoxValueNumber) {
+pub fn print_value(value: &LoxValueNumber) {
     print!("{}", value); // TODO: check equivalent to C-printf formatting "%g"
 }

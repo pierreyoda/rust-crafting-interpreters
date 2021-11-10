@@ -55,3 +55,11 @@ pub enum LoxInterpreterError {
     #[error("Return value")]
     InterpreterReturn(LoxValueHandle), // TODO: find a better way
 }
+
+pub type BResult<T> = std::result::Result<T, LoxBytecodeInterpreterError>;
+
+#[derive(Debug, Error)]
+pub enum LoxBytecodeInterpreterError {
+    #[error("IO Error: {0}")]
+    IOError(#[from] std::io::Error),
+}
