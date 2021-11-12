@@ -1,8 +1,8 @@
 use crate::errors::BResult;
 
 use super::{
-    compiler::LoxBytecodeLexer,
     debug::{disassemble_instruction, print_value},
+    lexer::LoxBytecodeLexer,
     values::LoxValueNumber,
     LoxBytecodeChunk, LoxBytecodeOpcode,
 };
@@ -48,8 +48,8 @@ impl Default for LoxBytecodeVirtualMachine {
 impl LoxBytecodeVirtualMachine {
     pub fn run_code(&mut self, code: &String) -> BResult<LoxInterpreterResult> {
         let mut lexer = LoxBytecodeLexer::default();
-        let compiled = lexer.compile(code)?;
-        todo!()
+        let parsed = lexer.compile(code)?;
+        self.interpret()
     }
 
     pub fn interpret(&mut self) -> BResult<LoxInterpreterResult> {

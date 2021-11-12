@@ -1,335 +1,689 @@
-use crate::errors::BResult;
+use std::collections::HashMap;
 
-#[derive(Clone, Debug, PartialEq)]
-pub enum LoxBytecodeTokenType {
-    // single-character tokens
-    LeftParenthesis,
-    RightParenthesis,
-    LeftBrace,
-    RightBrace,
-    Comma,
-    Dot,
-    Minus,
-    Plus,
-    Semicolon,
-    Slash,
-    Star,
-    // one or two character(s) tokens
-    Bang,
-    BangEqual,
-    Equal,
-    EqualEqual,
-    Greater,
-    GreaterEqual,
-    Less,
-    LessEqual,
-    // literals
-    Identifier,
-    String,
-    Number,
-    // keywords
-    And,
-    Class,
-    Else,
-    False,
-    Fun,
-    For,
-    If,
-    Nil,
-    Or,
-    Print,
-    Return,
-    Super,
-    This,
-    True,
-    Var,
-    While,
+use crate::{
+    bytecode::lexer::LoxBytecodeTokenType,
+    errors::{BResult, LoxBytecodeInterpreterError},
+};
 
-    Error,
-    EndOfFile,
+use super::{
+    debug::disassemble_chunk,
+    lexer::{LoxBytecodeLexer, LoxBytecodeToken},
+    values::LoxValueNumber,
+    LoxBytecodeChunk, LoxBytecodeOpcode,
+};
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum LoxBytecodeOperatorPrecedence {
+    None = 0,
+    Assignment = 1,
+    Or = 2,
+    And = 3,
+    Equality = 4,
+    Comparison = 5,
+    Term = 6,
+    Factor = 7,
+    Unary = 8,
+    Call = 9,
+    Primary = 10,
 }
 
-#[derive(Clone, Debug)]
-pub struct LoxBytecodeToken {
-    kind: LoxBytecodeTokenType,
-    start: usize,
-    length: usize,
-    line_number: usize,
-    error_message: Option<&'static str>,
-}
-
-#[derive(Default)]
-pub struct LoxBytecodeLexer {
-    /// Start index of the lexeme currently being scanned.
-    start: usize,
-    /// Index of the current character being looked at.
-    current: usize,
-    /// Current line number.
-    line_number: usize,
-}
-
-impl LoxBytecodeLexer {
-    pub fn compile(&mut self, source: &String) -> BResult<()> {
-        self.line_number = 0;
-        loop {
-            let token = self.scan_token(source);
+impl LoxBytecodeOperatorPrecedence {
+    pub fn from_usize(value: usize) -> Option<Self> {
+        match value {
+            0 => Some(Self::None),
+            1 => Some(Self::Assignment),
+            2 => Some(Self::Or),
+            3 => Some(Self::And),
+            4 => Some(Self::Equality),
+            5 => Some(Self::Comparison),
+            6 => Some(Self::Term),
+            7 => Some(Self::Factor),
+            8 => Some(Self::Unary),
+            9 => Some(Self::Call),
+            10 => Some(Self::Primary),
+            _ => None,
         }
     }
+}
 
-    fn scan_token(&mut self, source: &String) -> BResult<LoxBytecodeToken> {
-        self.skip_whitespace(source);
-        self.start = self.current;
-        if self.is_at_end(source) {
-            return Ok(self.build_token(LoxBytecodeTokenType::EndOfFile));
-        }
+pub type LoxParseFunction = fn(
+    &mut LoxBytecodeCompiler,
+    source: &str,
+    lexer: &mut LoxBytecodeLexer,
+    chunk: &mut LoxBytecodeChunk,
+) -> BResult<()>;
 
-        let char = self.advance(source);
-        if Self::is_digit(char) {
-            return self.handle_number(source);
-        }
-        Ok(match char {
-            '(' => self.build_token(LoxBytecodeTokenType::LeftParenthesis),
-            ')' => self.build_token(LoxBytecodeTokenType::RightParenthesis),
-            '{' => self.build_token(LoxBytecodeTokenType::LeftBrace),
-            '}' => self.build_token(LoxBytecodeTokenType::RightBrace),
-            ';' => self.build_token(LoxBytecodeTokenType::Semicolon),
-            ',' => self.build_token(LoxBytecodeTokenType::Comma),
-            '.' => self.build_token(LoxBytecodeTokenType::Dot),
-            '-' => self.build_token(LoxBytecodeTokenType::Minus),
-            '+' => self.build_token(LoxBytecodeTokenType::Plus),
-            '/' => self.build_token(LoxBytecodeTokenType::Slash),
-            '*' => self.build_token(LoxBytecodeTokenType::Star),
-            '!' => {
-                if self.match_char(source, '=') {
-                    self.build_token(LoxBytecodeTokenType::BangEqual)
-                } else {
-                    self.build_token(LoxBytecodeTokenType::Bang)
-                }
-            }
-            '=' => {
-                if self.match_char(source, '=') {
-                    self.build_token(LoxBytecodeTokenType::EqualEqual)
-                } else {
-                    self.build_token(LoxBytecodeTokenType::Equal)
-                }
-            }
-            '<' => {
-                if self.match_char(source, '=') {
-                    self.build_token(LoxBytecodeTokenType::LessEqual)
-                } else {
-                    self.build_token(LoxBytecodeTokenType::Less)
-                }
-            }
-            '>' => {
-                if self.match_char(source, '=') {
-                    self.build_token(LoxBytecodeTokenType::GreaterEqual)
-                } else {
-                    self.build_token(LoxBytecodeTokenType::Greater)
-                }
-            }
-            '"' => self.handle_string(source),
-            _ => self.build_token_error("Unexpected character."),
+pub struct LoxParseRule {
+    prefix: Option<LoxParseFunction>,
+    infix: Option<LoxParseFunction>,
+    precedence: LoxBytecodeOperatorPrecedence,
+}
+
+pub struct LoxBytecodeTokensParser {
+    current: LoxBytecodeToken,
+    previous: LoxBytecodeToken,
+    had_error: bool,
+    panic_mode: bool,
+}
+
+/// Takes tokens from the Lexer and transforms them into a chunk of bytecode.
+pub struct LoxBytecodeCompiler {
+    parser: LoxBytecodeTokensParser,
+    parsing_rules: HashMap<LoxBytecodeTokenType, LoxParseRule>,
+}
+
+impl LoxBytecodeCompiler {
+    pub fn new(source: &str, lexer: &mut LoxBytecodeLexer) -> BResult<Self> {
+        // parsing rules
+        // TODO: use a macro here for terseness
+        let mut parsing_rules = HashMap::new();
+        parsing_rules.insert(
+            LoxBytecodeTokenType::LeftParenthesis,
+            LoxParseRule {
+                prefix: Some(|compiler, source, lexer, chunk| {
+                    compiler.handle_grouping(source, lexer, chunk)
+                }),
+                infix: None,
+                precedence: LoxBytecodeOperatorPrecedence::None,
+            },
+        );
+        parsing_rules.insert(
+            LoxBytecodeTokenType::RightParenthesis,
+            LoxParseRule {
+                prefix: None,
+                infix: None,
+                precedence: LoxBytecodeOperatorPrecedence::None,
+            },
+        );
+        parsing_rules.insert(
+            LoxBytecodeTokenType::LeftBrace,
+            LoxParseRule {
+                prefix: None,
+                infix: None,
+                precedence: LoxBytecodeOperatorPrecedence::None,
+            },
+        );
+        parsing_rules.insert(
+            LoxBytecodeTokenType::RightBrace,
+            LoxParseRule {
+                prefix: None,
+                infix: None,
+                precedence: LoxBytecodeOperatorPrecedence::None,
+            },
+        );
+        parsing_rules.insert(
+            LoxBytecodeTokenType::Comma,
+            LoxParseRule {
+                prefix: None,
+                infix: None,
+                precedence: LoxBytecodeOperatorPrecedence::None,
+            },
+        );
+        parsing_rules.insert(
+            LoxBytecodeTokenType::Dot,
+            LoxParseRule {
+                prefix: None,
+                infix: None,
+                precedence: LoxBytecodeOperatorPrecedence::None,
+            },
+        );
+        parsing_rules.insert(
+            LoxBytecodeTokenType::Minus,
+            LoxParseRule {
+                prefix: Some(|compiler, source, lexer, chunk| {
+                    compiler.handle_unary(source, lexer, chunk)
+                }),
+                infix: Some(|compiler, source, lexer, chunk| {
+                    compiler.handle_binary(source, lexer, chunk)
+                }),
+                precedence: LoxBytecodeOperatorPrecedence::Term,
+            },
+        );
+        parsing_rules.insert(
+            LoxBytecodeTokenType::Plus,
+            LoxParseRule {
+                prefix: None,
+                infix: Some(|compiler, source, lexer, chunk| {
+                    compiler.handle_binary(source, lexer, chunk)
+                }),
+                precedence: LoxBytecodeOperatorPrecedence::Term,
+            },
+        );
+        parsing_rules.insert(
+            LoxBytecodeTokenType::Semicolon,
+            LoxParseRule {
+                prefix: None,
+                infix: None,
+                precedence: LoxBytecodeOperatorPrecedence::None,
+            },
+        );
+        parsing_rules.insert(
+            LoxBytecodeTokenType::Slash,
+            LoxParseRule {
+                prefix: None,
+                infix: Some(|compiler, source, lexer, chunk| {
+                    compiler.handle_binary(source, lexer, chunk)
+                }),
+                precedence: LoxBytecodeOperatorPrecedence::Factor,
+            },
+        );
+        parsing_rules.insert(
+            LoxBytecodeTokenType::Star,
+            LoxParseRule {
+                prefix: None,
+                infix: Some(|compiler, source, lexer, chunk| {
+                    compiler.handle_binary(source, lexer, chunk)
+                }),
+                precedence: LoxBytecodeOperatorPrecedence::Factor,
+            },
+        );
+        parsing_rules.insert(
+            LoxBytecodeTokenType::Bang,
+            LoxParseRule {
+                prefix: None,
+                infix: None,
+                precedence: LoxBytecodeOperatorPrecedence::None,
+            },
+        );
+        parsing_rules.insert(
+            LoxBytecodeTokenType::BangEqual,
+            LoxParseRule {
+                prefix: None,
+                infix: None,
+                precedence: LoxBytecodeOperatorPrecedence::None,
+            },
+        );
+        parsing_rules.insert(
+            LoxBytecodeTokenType::Equal,
+            LoxParseRule {
+                prefix: None,
+                infix: None,
+                precedence: LoxBytecodeOperatorPrecedence::None,
+            },
+        );
+        parsing_rules.insert(
+            LoxBytecodeTokenType::EqualEqual,
+            LoxParseRule {
+                prefix: None,
+                infix: None,
+                precedence: LoxBytecodeOperatorPrecedence::None,
+            },
+        );
+        parsing_rules.insert(
+            LoxBytecodeTokenType::Greater,
+            LoxParseRule {
+                prefix: None,
+                infix: None,
+                precedence: LoxBytecodeOperatorPrecedence::None,
+            },
+        );
+        parsing_rules.insert(
+            LoxBytecodeTokenType::GreaterEqual,
+            LoxParseRule {
+                prefix: None,
+                infix: None,
+                precedence: LoxBytecodeOperatorPrecedence::None,
+            },
+        );
+        parsing_rules.insert(
+            LoxBytecodeTokenType::Less,
+            LoxParseRule {
+                prefix: None,
+                infix: None,
+                precedence: LoxBytecodeOperatorPrecedence::None,
+            },
+        );
+        parsing_rules.insert(
+            LoxBytecodeTokenType::LessEqual,
+            LoxParseRule {
+                prefix: None,
+                infix: None,
+                precedence: LoxBytecodeOperatorPrecedence::None,
+            },
+        );
+        parsing_rules.insert(
+            LoxBytecodeTokenType::Identifier,
+            LoxParseRule {
+                prefix: None,
+                infix: None,
+                precedence: LoxBytecodeOperatorPrecedence::None,
+            },
+        );
+        parsing_rules.insert(
+            LoxBytecodeTokenType::String,
+            LoxParseRule {
+                prefix: None,
+                infix: None,
+                precedence: LoxBytecodeOperatorPrecedence::None,
+            },
+        );
+        parsing_rules.insert(
+            LoxBytecodeTokenType::Number,
+            LoxParseRule {
+                prefix: Some(|compiler, source, lexer, chunk| {
+                    compiler.handle_number(source, chunk)
+                }),
+                infix: None,
+                precedence: LoxBytecodeOperatorPrecedence::None,
+            },
+        );
+        parsing_rules.insert(
+            LoxBytecodeTokenType::And,
+            LoxParseRule {
+                prefix: None,
+                infix: None,
+                precedence: LoxBytecodeOperatorPrecedence::None,
+            },
+        );
+        parsing_rules.insert(
+            LoxBytecodeTokenType::Class,
+            LoxParseRule {
+                prefix: None,
+                infix: None,
+                precedence: LoxBytecodeOperatorPrecedence::None,
+            },
+        );
+        parsing_rules.insert(
+            LoxBytecodeTokenType::Else,
+            LoxParseRule {
+                prefix: None,
+                infix: None,
+                precedence: LoxBytecodeOperatorPrecedence::None,
+            },
+        );
+        parsing_rules.insert(
+            LoxBytecodeTokenType::False,
+            LoxParseRule {
+                prefix: None,
+                infix: None,
+                precedence: LoxBytecodeOperatorPrecedence::None,
+            },
+        );
+        parsing_rules.insert(
+            LoxBytecodeTokenType::For,
+            LoxParseRule {
+                prefix: None,
+                infix: None,
+                precedence: LoxBytecodeOperatorPrecedence::None,
+            },
+        );
+        parsing_rules.insert(
+            LoxBytecodeTokenType::Fun,
+            LoxParseRule {
+                prefix: None,
+                infix: None,
+                precedence: LoxBytecodeOperatorPrecedence::None,
+            },
+        );
+        parsing_rules.insert(
+            LoxBytecodeTokenType::If,
+            LoxParseRule {
+                prefix: None,
+                infix: None,
+                precedence: LoxBytecodeOperatorPrecedence::None,
+            },
+        );
+        parsing_rules.insert(
+            LoxBytecodeTokenType::Nil,
+            LoxParseRule {
+                prefix: None,
+                infix: None,
+                precedence: LoxBytecodeOperatorPrecedence::None,
+            },
+        );
+        parsing_rules.insert(
+            LoxBytecodeTokenType::Or,
+            LoxParseRule {
+                prefix: None,
+                infix: None,
+                precedence: LoxBytecodeOperatorPrecedence::None,
+            },
+        );
+        parsing_rules.insert(
+            LoxBytecodeTokenType::Print,
+            LoxParseRule {
+                prefix: None,
+                infix: None,
+                precedence: LoxBytecodeOperatorPrecedence::None,
+            },
+        );
+        parsing_rules.insert(
+            LoxBytecodeTokenType::Return,
+            LoxParseRule {
+                prefix: None,
+                infix: None,
+                precedence: LoxBytecodeOperatorPrecedence::None,
+            },
+        );
+        parsing_rules.insert(
+            LoxBytecodeTokenType::Super,
+            LoxParseRule {
+                prefix: None,
+                infix: None,
+                precedence: LoxBytecodeOperatorPrecedence::None,
+            },
+        );
+        parsing_rules.insert(
+            LoxBytecodeTokenType::This,
+            LoxParseRule {
+                prefix: None,
+                infix: None,
+                precedence: LoxBytecodeOperatorPrecedence::None,
+            },
+        );
+        parsing_rules.insert(
+            LoxBytecodeTokenType::True,
+            LoxParseRule {
+                prefix: None,
+                infix: None,
+                precedence: LoxBytecodeOperatorPrecedence::None,
+            },
+        );
+        parsing_rules.insert(
+            LoxBytecodeTokenType::Var,
+            LoxParseRule {
+                prefix: None,
+                infix: None,
+                precedence: LoxBytecodeOperatorPrecedence::None,
+            },
+        );
+        parsing_rules.insert(
+            LoxBytecodeTokenType::While,
+            LoxParseRule {
+                prefix: None,
+                infix: None,
+                precedence: LoxBytecodeOperatorPrecedence::None,
+            },
+        );
+        parsing_rules.insert(
+            LoxBytecodeTokenType::Error,
+            LoxParseRule {
+                prefix: None,
+                infix: None,
+                precedence: LoxBytecodeOperatorPrecedence::None,
+            },
+        );
+        parsing_rules.insert(
+            LoxBytecodeTokenType::EndOfFile,
+            LoxParseRule {
+                prefix: None,
+                infix: None,
+                precedence: LoxBytecodeOperatorPrecedence::None,
+            },
+        );
+
+        let first_token = lexer.scan_token(source)?;
+        Ok(Self {
+            parser: LoxBytecodeTokensParser {
+                current: first_token.clone(), // TODO: check init
+                previous: first_token,        // TODO: check init
+                had_error: false,
+                panic_mode: false,
+            },
+            parsing_rules,
         })
     }
 
-    fn handle_identifier(&mut self, source: &String) -> LoxBytecodeToken {
-        while Self::is_alpha(self.peek(source)) || Self::is_digit(self.peek(source)) {
-            self.advance(source);
-        }
-        self.build_token(self.identifier_type(source))
-    }
-
-    fn identifier_type(&self, source: &String) -> LoxBytecodeTokenType {
-        match self.peek(source) {
-            'a' => self.check_keyword(source, 1, 2, "nd", LoxBytecodeTokenType::And),
-            'c' => self.check_keyword(source, 1, 4, "lass", LoxBytecodeTokenType::Class),
-            'e' => self.check_keyword(source, 1, 3, "lse", LoxBytecodeTokenType::Else),
-            'f' => {
-                if self.current - self.start > 1 {
-                    match self.peek_next(source) {
-                        Some('a') => {
-                            self.check_keyword(source, 2, 3, "lse", LoxBytecodeTokenType::False)
-                        }
-                        Some('o') => {
-                            self.check_keyword(source, 2, 1, "r", LoxBytecodeTokenType::For)
-                        }
-                        Some('u') => {
-                            self.check_keyword(source, 2, 1, "n", LoxBytecodeTokenType::Fun)
-                        }
-                        _ => LoxBytecodeTokenType::Identifier,
-                    }
-                } else {
-                    LoxBytecodeTokenType::Identifier
-                }
-            }
-            'i' => self.check_keyword(source, 1, 1, "f", LoxBytecodeTokenType::If),
-            'n' => self.check_keyword(source, 1, 2, "il", LoxBytecodeTokenType::Nil),
-            'o' => self.check_keyword(source, 1, 1, "r", LoxBytecodeTokenType::Or),
-            'p' => self.check_keyword(source, 1, 4, "rint", LoxBytecodeTokenType::Print),
-            'r' => self.check_keyword(source, 1, 5, "eturn", LoxBytecodeTokenType::Return),
-            's' => self.check_keyword(source, 1, 4, "uper", LoxBytecodeTokenType::Super),
-            't' => {
-                if self.current - self.start > 1 {
-                    match self.peek_next(source) {
-                        Some('h') => {
-                            self.check_keyword(source, 2, 2, "is", LoxBytecodeTokenType::This)
-                        }
-                        Some('r') => {
-                            self.check_keyword(source, 2, 2, "ue", LoxBytecodeTokenType::True)
-                        }
-                        _ => LoxBytecodeTokenType::Identifier,
-                    }
-                } else {
-                    LoxBytecodeTokenType::Identifier
-                }
-            }
-            'v' => self.check_keyword(source, 1, 2, "ar", LoxBytecodeTokenType::Var),
-            'w' => self.check_keyword(source, 1, 4, "hile", LoxBytecodeTokenType::While),
-            _ => LoxBytecodeTokenType::Identifier,
-        }
-    }
-
-    fn check_keyword(
-        &self,
-        source: &String,
-        start: usize,
-        length: usize,
-        rest: &str,
-        kind: LoxBytecodeTokenType,
-    ) -> LoxBytecodeTokenType {
-        let index = self.start + start;
-        if self.current - self.start == start + length && source[index..index + length] == *rest {
-            kind
-        } else {
-            LoxBytecodeTokenType::Identifier
-        }
-    }
-
-    fn handle_string(&mut self, source: &String) -> LoxBytecodeToken {
-        while self.peek(source) != '"' && !self.is_at_end(source) {
-            if self.peek(source) == '\n' {
-                self.line_number += 1;
-            }
-            self.advance(source);
-        }
-
-        if self.is_at_end(source) {
-            self.build_token_error("Unterminated string.")
-        } else {
-            self.advance(source);
-            self.build_token(LoxBytecodeTokenType::String)
-        }
-    }
-
-    fn handle_number(&mut self, source: &String) -> BResult<LoxBytecodeToken> {
-        while Self::is_digit(self.peek(source)) {
-            self.advance(source);
-        }
-
-        // look for a fractional part
-        if self.peek(source) == '.'
-            && Self::is_digit(
-                self.peek_next(source)
-                    .expect("compiler expects a digit after number fractional separator '.'"),
-            )
-        {
-            self.advance(source); // consume the '.'
-            while Self::is_digit(self.peek(source)) {
-                self.advance(source);
-            }
-        }
-
-        Ok(self.build_token(LoxBytecodeTokenType::Number))
-    }
-
-    fn build_token(&self, kind: LoxBytecodeTokenType) -> LoxBytecodeToken {
-        LoxBytecodeToken {
-            kind,
-            start: self.start,
-            length: self.current - self.start,
-            line_number: self.line_number,
-            error_message: None,
-        }
-    }
-
-    fn build_token_error(&self, message: &'static str) -> LoxBytecodeToken {
-        LoxBytecodeToken {
-            kind: LoxBytecodeTokenType::Error,
-            start: self.start,
-            length: message.len(),
-            line_number: self.line_number,
-            error_message: Some(message),
-        }
-    }
-
-    /// Skip over whitespace, line breaks and comments.
-    fn skip_whitespace(&mut self, source: &String) {
+    pub fn compile(
+        &mut self,
+        source: &str,
+        chunk: &mut LoxBytecodeChunk,
+        lexer: &mut LoxBytecodeLexer,
+    ) -> BResult<bool> {
+        self.init(source, lexer, chunk)?;
+        self.parser.had_error = false;
+        let mut line_number = usize::MAX;
         loop {
-            match self.peek(source) {
-                ' ' | '\r' | '\t' => {
-                    self.advance(source);
-                }
-                '\n' => {
-                    self.line_number += 1;
-                    self.advance(source);
-                }
-                '/' => {
-                    if let Some(next) = self.peek_next(source) {
-                        if next == '/' {
-                            while self.peek(source) != '\n' && !self.is_at_end(source) {
-                                self.advance(source);
-                            }
-                        } else {
-                            return;
-                        }
-                    } else {
-                        return;
-                    }
-                }
-                _ => return,
+            let token = lexer.scan_token(source)?;
+            let token_line_number = token.get_line_number();
+            if token_line_number != line_number {
+                print!("{:04}", token_line_number);
+                line_number = token_line_number;
+            } else {
+                print!("   | ");
+            }
+            println!("{:?} '{}'", token.get_kind(), token.get_lexeme(source));
+            if token.get_kind() == &LoxBytecodeTokenType::EndOfFile {
+                break;
+            }
+        }
+        self.end_compilation(chunk);
+        Ok(!self.parser.had_error)
+    }
+
+    fn init(
+        &mut self,
+        source: &str,
+        lexer: &mut LoxBytecodeLexer,
+        chunk: &mut LoxBytecodeChunk,
+    ) -> BResult<()> {
+        self.advance(source, lexer)?;
+        self.handle_expression(source, lexer, chunk)?;
+        self.consume_kind(
+            &LoxBytecodeTokenType::EndOfFile,
+            source,
+            lexer,
+            "Expect end of expression.",
+        )?;
+        Ok(())
+    }
+
+    fn end_compilation(&self, chunk: &mut LoxBytecodeChunk) {
+        self.emit_return(chunk);
+        #[cfg(feature = "code-printing")]
+        {
+            if !self.parser.had_error {
+                disassemble_chunk(chunk, "code");
             }
         }
     }
 
-    fn advance(&mut self, source: &String) -> char {
-        self.current += 1;
-        source
-            .chars()
-            .nth(self.current - 1)
-            .expect("compiler expects a character")
+    fn emit_constant(&mut self, source: &str, chunk: &mut LoxBytecodeChunk, value: LoxValueNumber) {
+        let constant_value = self.build_constant(source, chunk, value);
+        self.emit_bytes(chunk, LoxBytecodeOpcode::Constant, constant_value);
     }
 
-    fn match_char(&mut self, source: &String, expected: char) -> bool {
-        if self.is_at_end(source) {
-            false
-        } else if self.peek(source) != expected {
-            false
+    fn build_constant(
+        &mut self,
+        source: &str,
+        chunk: &mut LoxBytecodeChunk,
+        value: LoxValueNumber,
+    ) -> LoxBytecodeOpcode {
+        let constant = chunk.add_constant(value);
+        if constant > u8::MAX as usize {
+            self.error("Too many constants in one chunk", source);
+            LoxBytecodeOpcode::Value(0)
         } else {
-            self.current += 1;
-            true
+            LoxBytecodeOpcode::Value(constant)
         }
     }
 
-    fn peek(&self, source: &String) -> char {
-        source
-            .chars()
-            .nth(self.current)
-            .expect("compiler expects a character at current index")
+    fn emit_return(&self, chunk: &mut LoxBytecodeChunk) {
+        self.emit_byte(chunk, LoxBytecodeOpcode::Return);
     }
 
-    fn peek_next(&self, source: &String) -> Option<char> {
-        source.chars().nth(self.current + 1)
+    fn emit_bytes(
+        &self,
+        chunk: &mut LoxBytecodeChunk,
+        first_byte: LoxBytecodeOpcode,
+        second_byte: LoxBytecodeOpcode,
+    ) {
+        self.emit_byte(chunk, first_byte);
+        self.emit_byte(chunk, second_byte);
     }
 
-    fn is_at_end(&self, source: &String) -> bool {
-        self.current >= source.len()
+    fn emit_byte(&self, chunk: &mut LoxBytecodeChunk, opcode: LoxBytecodeOpcode) {
+        chunk.append(opcode, self.parser.previous.get_line_number());
     }
 
-    fn is_alpha(char: char) -> bool {
-        (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || char == '_'
+    fn handle_binary(
+        &mut self,
+        source: &str,
+        lexer: &mut LoxBytecodeLexer,
+        chunk: &mut LoxBytecodeChunk,
+    ) -> BResult<()> {
+        let operator_kind = self.parser.previous.get_kind().clone();
+        let rule = self.get_rule(&operator_kind)?;
+        let precedence =
+            LoxBytecodeOperatorPrecedence::from_usize(rule.precedence.clone() as usize + 1)
+                .expect("compiler expects a valid value for LoxBytecodeOperatorPrecedence");
+        self.parse_precedence(source, precedence, lexer, chunk)?;
+        match operator_kind {
+            LoxBytecodeTokenType::Plus => self.emit_byte(chunk, LoxBytecodeOpcode::Add),
+            LoxBytecodeTokenType::Minus => self.emit_byte(chunk, LoxBytecodeOpcode::Subtract),
+            LoxBytecodeTokenType::Star => self.emit_byte(chunk, LoxBytecodeOpcode::Multiply),
+            LoxBytecodeTokenType::Slash => self.emit_byte(chunk, LoxBytecodeOpcode::Divide),
+            _ => unreachable!(),
+        }
+        Ok(())
     }
 
-    fn is_digit(char: char) -> bool {
-        char >= '0' && char <= '9'
+    fn handle_unary(
+        &mut self,
+        source: &str,
+        lexer: &mut LoxBytecodeLexer,
+        chunk: &mut LoxBytecodeChunk,
+    ) -> BResult<()> {
+        let operator_kind = self.parser.previous.get_kind().clone();
+        // compile the operand
+        self.parse_precedence(source, LoxBytecodeOperatorPrecedence::Unary, lexer, chunk)?;
+        // emit the operator instruction
+        match operator_kind {
+            LoxBytecodeTokenType::Minus => self.emit_byte(chunk, LoxBytecodeOpcode::Negate),
+            _ => unreachable!(),
+        };
+        Ok(())
+    }
+
+    fn handle_grouping(
+        &mut self,
+        source: &str,
+        lexer: &mut LoxBytecodeLexer,
+        chunk: &mut LoxBytecodeChunk,
+    ) -> BResult<()> {
+        self.handle_expression(source, lexer, chunk)?;
+        self.consume_kind(
+            &LoxBytecodeTokenType::RightParenthesis,
+            source,
+            lexer,
+            "Expect ')' after expression.",
+        )?;
+        Ok(())
+    }
+
+    fn handle_expression(
+        &mut self,
+        source: &str,
+        lexer: &mut LoxBytecodeLexer,
+        chunk: &mut LoxBytecodeChunk,
+    ) -> BResult<()> {
+        self.parse_precedence(
+            source,
+            LoxBytecodeOperatorPrecedence::Assignment,
+            lexer,
+            chunk,
+        )?;
+        Ok(())
+    }
+
+    fn handle_number(&mut self, source: &str, chunk: &mut LoxBytecodeChunk) -> BResult<()> {
+        let lexeme = self.parser.previous.get_lexeme(source);
+        let value: LoxValueNumber = lexeme
+            .parse()
+            .map_err(|_| LoxBytecodeInterpreterError::ParserInvalidNumber(lexeme.into()))?;
+        self.emit_constant(source, chunk, value);
+        Ok(())
+    }
+
+    fn parse_precedence(
+        &mut self,
+        source: &str,
+        precedence: LoxBytecodeOperatorPrecedence,
+        lexer: &mut LoxBytecodeLexer,
+        chunk: &mut LoxBytecodeChunk,
+    ) -> BResult<()> {
+        self.advance(source, lexer)?;
+        if let Some(prefix_rule) = self.get_rule(self.parser.previous.get_kind())?.prefix {
+            prefix_rule(self, source, lexer, chunk)?;
+        } else {
+            self.error("Expect expression.", source);
+            return Ok(());
+        }
+
+        while precedence.clone() as usize
+            <= self
+                .get_rule(self.parser.current.get_kind())?
+                .precedence
+                .clone() as usize
+        {
+            self.advance(source, lexer)?;
+            if let Some(infix_rule) = self.get_rule(self.parser.previous.get_kind())?.infix {
+                infix_rule(self, source, lexer, chunk)?;
+            } else {
+                panic!("Compiler: infix rule expected");
+            }
+        }
+
+        Ok(())
+    }
+
+    fn advance(&mut self, source: &str, lexer: &mut LoxBytecodeLexer) -> BResult<()> {
+        self.parser.previous = self.parser.current.clone();
+        loop {
+            self.parser.current = lexer.scan_token(source)?;
+            if self.parser.current.get_kind() != &LoxBytecodeTokenType::Error {
+                break;
+            }
+            self.error_at_current(self.parser.current.get_lexeme(source), source);
+        }
+        Ok(())
+    }
+
+    fn consume_kind(
+        &mut self,
+        kind: &LoxBytecodeTokenType,
+        source: &str,
+        lexer: &mut LoxBytecodeLexer,
+        message: &str,
+    ) -> BResult<()> {
+        if self.parser.current.get_kind() == kind {
+            self.advance(source, lexer)?;
+        } else {
+            self.error_at_current(message, source);
+        }
+        Ok(())
+    }
+
+    fn get_rule(&self, kind: &LoxBytecodeTokenType) -> BResult<&LoxParseRule> {
+        self.parsing_rules
+            .get(kind)
+            .ok_or_else(|| LoxBytecodeInterpreterError::CompilerUnknownRule(format!("{:?}", kind)))
+    }
+
+    fn error(&mut self, message: &str, source: &str) {
+        let token = self.parser.previous.clone();
+        self.error_at(&token, source, message);
+    }
+
+    fn error_at_current(&mut self, message: &str, source: &str) {
+        let token = self.parser.current.clone();
+        self.error_at(&token, source, message);
+    }
+
+    fn error_at(&mut self, token: &LoxBytecodeToken, source: &str, message: &str) {
+        if self.parser.panic_mode {
+            return; // suppress any other errors in panic mode
+        }
+
+        self.parser.panic_mode = true;
+        let mut error = format!("[line {}] Error", token.get_line_number());
+        match token.get_kind() {
+            LoxBytecodeTokenType::EndOfFile => error += " at end",
+            LoxBytecodeTokenType::Error => (),
+            _ => error += format!(" at '{}'", token.get_lexeme(source)).as_str(), // TODO: check formatting
+        }
+        error += format!(": {}\n", message).as_str();
+        println!("{}", error);
+        self.parser.had_error = true;
     }
 }

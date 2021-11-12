@@ -2,6 +2,7 @@ use self::values::{LoxValueArray, LoxValueNumber};
 
 pub mod compiler;
 pub mod debug;
+pub mod lexer;
 pub mod values;
 pub mod vm;
 
@@ -72,5 +73,9 @@ impl LoxBytecodeChunk {
 
     pub fn get_line(&self, offset: usize) -> Option<usize> {
         self.lines.get(offset).cloned()
+    }
+
+    pub fn get_size(&self) -> usize {
+        self.code.len()
     }
 }

@@ -62,4 +62,10 @@ pub type BResult<T> = std::result::Result<T, LoxBytecodeInterpreterError>;
 pub enum LoxBytecodeInterpreterError {
     #[error("IO Error: {0}")]
     IOError(#[from] std::io::Error),
+    #[error("{0}")]
+    ParserError(String),
+    #[error("'{0}' is not a valid number.")]
+    ParserInvalidNumber(String),
+    #[error("Could not find the '{0}' rule.")]
+    CompilerUnknownRule(String),
 }

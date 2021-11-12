@@ -2,6 +2,14 @@ use crate::bytecode::LoxBytecodeOpcode;
 
 use super::{values::LoxValueNumber, LoxBytecodeChunk};
 
+pub fn disassemble_chunk(chunk: &LoxBytecodeChunk, name: &str) {
+    println!("== {} ==", name);
+    let mut offset = 0;
+    while offset < chunk.get_size() {
+        offset = disassemble_instruction(chunk, offset);
+    }
+}
+
 pub fn disassemble_instruction(chunk: &LoxBytecodeChunk, offset: usize) -> usize {
     print!("{:04}", offset);
     let line_number = chunk.get_line(offset);
