@@ -1,4 +1,4 @@
-use self::values::{LoxValueArray, LoxValueNumber};
+use self::values::{LoxBytecodeValue, LoxValueArray};
 
 pub mod compiler;
 pub mod debug;
@@ -10,10 +10,17 @@ pub mod vm;
 pub enum LoxBytecodeOpcode {
     Value(usize),
     Constant,
+    Nil,
+    True,
+    False,
+    Equal,
+    Greater,
+    Less,
     Add,
     Subtract,
     Multiply,
     Divide,
+    Not,
     Negate,
     Return,
 }
@@ -54,12 +61,12 @@ impl LoxBytecodeChunk {
         todo!()
     }
 
-    pub fn add_constant(&mut self, value: LoxValueNumber) -> usize {
+    pub fn add_constant(&mut self, value: LoxBytecodeValue) -> usize {
         self.constants.write(value);
         self.constants.count() - 1
     }
 
-    pub fn get_constant(&self, index: usize) -> Option<&LoxValueNumber> {
+    pub fn get_constant(&self, index: usize) -> Option<&LoxBytecodeValue> {
         self.constants.read(index)
     }
 

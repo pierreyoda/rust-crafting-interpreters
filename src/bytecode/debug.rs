@@ -1,6 +1,6 @@
-use crate::bytecode::LoxBytecodeOpcode;
+use crate::{bytecode::LoxBytecodeOpcode, printer::LoxPrintable};
 
-use super::{values::LoxValueNumber, LoxBytecodeChunk};
+use super::{values::LoxBytecodeValue, LoxBytecodeChunk};
 
 pub fn disassemble_chunk(chunk: &LoxBytecodeChunk, name: &str) {
     println!("== {} ==", name);
@@ -21,10 +21,17 @@ pub fn disassemble_instruction(chunk: &LoxBytecodeChunk, offset: usize) -> usize
     if let Some(instruction) = chunk.get_instruction(offset) {
         match instruction {
             LoxBytecodeOpcode::Constant => constant_instruction("OP_CONSTANT", chunk, offset),
+            LoxBytecodeOpcode::Nil => simple_instruction("OP_NIL", offset),
+            LoxBytecodeOpcode::True => simple_instruction("OP_TRUE", offset),
+            LoxBytecodeOpcode::False => simple_instruction("OP_FALSE", offset),
+            LoxBytecodeOpcode::Equal => simple_instruction("OP_EQUAL", offset),
+            LoxBytecodeOpcode::Greater => simple_instruction("OP_GREATER", offset),
+            LoxBytecodeOpcode::Less => simple_instruction("OP_LESS", offset),
             LoxBytecodeOpcode::Add => simple_instruction("OP_ADD", offset),
             LoxBytecodeOpcode::Subtract => simple_instruction("OP_SUBTRACT", offset),
             LoxBytecodeOpcode::Multiply => simple_instruction("OP_MULTIPLY", offset),
             LoxBytecodeOpcode::Divide => simple_instruction("OP_DIVIDE", offset),
+            LoxBytecodeOpcode::Not => simple_instruction("OP_NOT", offset),
             LoxBytecodeOpcode::Negate => simple_instruction("OP_NEGATE", offset),
             LoxBytecodeOpcode::Return => simple_instruction("OP_RETURN", offset),
             _ => {
@@ -54,6 +61,6 @@ fn constant_instruction(name: &str, chunk: &LoxBytecodeChunk, offset: usize) -> 
     offset + 2
 }
 
-pub fn print_value(value: &LoxValueNumber) {
-    print!("{}", value); // TODO: check equivalent to C-printf formatting "%g"
+pub fn print_value(value: &LoxBytecodeValue) {
+    print!("{}", value.representation()); // TODO: check equivalent to C-printf formatting "%g"
 }

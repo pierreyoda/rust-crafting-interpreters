@@ -8,7 +8,7 @@ use crate::{
 use super::{
     debug::disassemble_chunk,
     lexer::{LoxBytecodeLexer, LoxBytecodeToken},
-    values::LoxValueNumber,
+    values::LoxBytecodeValue,
     LoxBytecodeChunk, LoxBytecodeOpcode,
 };
 
@@ -180,7 +180,9 @@ impl LoxBytecodeCompiler {
         parsing_rules.insert(
             LoxBytecodeTokenType::Bang,
             LoxParseRule {
-                prefix: None,
+                prefix: Some(|compiler, source, lexer, chunk| {
+                    compiler.handle_unary(source, lexer, chunk)
+                }),
                 infix: None,
                 precedence: LoxBytecodeOperatorPrecedence::None,
             },
@@ -189,8 +191,10 @@ impl LoxBytecodeCompiler {
             LoxBytecodeTokenType::BangEqual,
             LoxParseRule {
                 prefix: None,
-                infix: None,
-                precedence: LoxBytecodeOperatorPrecedence::None,
+                infix: Some(|compiler, source, lexer, chunk| {
+                    compiler.handle_binary(source, lexer, chunk)
+                }),
+                precedence: LoxBytecodeOperatorPrecedence::Equality,
             },
         );
         parsing_rules.insert(
@@ -205,40 +209,50 @@ impl LoxBytecodeCompiler {
             LoxBytecodeTokenType::EqualEqual,
             LoxParseRule {
                 prefix: None,
-                infix: None,
-                precedence: LoxBytecodeOperatorPrecedence::None,
+                infix: Some(|compiler, source, lexer, chunk| {
+                    compiler.handle_binary(source, lexer, chunk)
+                }),
+                precedence: LoxBytecodeOperatorPrecedence::Equality,
             },
         );
         parsing_rules.insert(
             LoxBytecodeTokenType::Greater,
             LoxParseRule {
                 prefix: None,
-                infix: None,
-                precedence: LoxBytecodeOperatorPrecedence::None,
+                infix: Some(|compiler, source, lexer, chunk| {
+                    compiler.handle_binary(source, lexer, chunk)
+                }),
+                precedence: LoxBytecodeOperatorPrecedence::Comparison,
             },
         );
         parsing_rules.insert(
             LoxBytecodeTokenType::GreaterEqual,
             LoxParseRule {
                 prefix: None,
-                infix: None,
-                precedence: LoxBytecodeOperatorPrecedence::None,
+                infix: Some(|compiler, source, lexer, chunk| {
+                    compiler.handle_binary(source, lexer, chunk)
+                }),
+                precedence: LoxBytecodeOperatorPrecedence::Comparison,
             },
         );
         parsing_rules.insert(
             LoxBytecodeTokenType::Less,
             LoxParseRule {
                 prefix: None,
-                infix: None,
-                precedence: LoxBytecodeOperatorPrecedence::None,
+                infix: Some(|compiler, source, lexer, chunk| {
+                    compiler.handle_binary(source, lexer, chunk)
+                }),
+                precedence: LoxBytecodeOperatorPrecedence::Comparison,
             },
         );
         parsing_rules.insert(
             LoxBytecodeTokenType::LessEqual,
             LoxParseRule {
                 prefix: None,
-                infix: None,
-                precedence: LoxBytecodeOperatorPrecedence::None,
+                infix: Some(|compiler, source, lexer, chunk| {
+                    compiler.handle_binary(source, lexer, chunk)
+                }),
+                precedence: LoxBytecodeOperatorPrecedence::Comparison,
             },
         );
         parsing_rules.insert(
@@ -260,9 +274,7 @@ impl LoxBytecodeCompiler {
         parsing_rules.insert(
             LoxBytecodeTokenType::Number,
             LoxParseRule {
-                prefix: Some(|compiler, source, lexer, chunk| {
-                    compiler.handle_number(source, chunk)
-                }),
+                prefix: Some(|compiler, source, _, chunk| compiler.handle_number(source, chunk)),
                 infix: None,
                 precedence: LoxBytecodeOperatorPrecedence::None,
             },
@@ -294,7 +306,7 @@ impl LoxBytecodeCompiler {
         parsing_rules.insert(
             LoxBytecodeTokenType::False,
             LoxParseRule {
-                prefix: None,
+                prefix: Some(|compiler, source, _, chunk| compiler.handle_literal(source, chunk)),
                 infix: None,
                 precedence: LoxBytecodeOperatorPrecedence::None,
             },
@@ -326,7 +338,7 @@ impl LoxBytecodeCompiler {
         parsing_rules.insert(
             LoxBytecodeTokenType::Nil,
             LoxParseRule {
-                prefix: None,
+                prefix: Some(|compiler, source, _, chunk| compiler.handle_literal(source, chunk)),
                 infix: None,
                 precedence: LoxBytecodeOperatorPrecedence::None,
             },
@@ -374,7 +386,7 @@ impl LoxBytecodeCompiler {
         parsing_rules.insert(
             LoxBytecodeTokenType::True,
             LoxParseRule {
-                prefix: None,
+                prefix: Some(|compiler, source, _, chunk| compiler.handle_literal(source, chunk)),
                 infix: None,
                 precedence: LoxBytecodeOperatorPrecedence::None,
             },
@@ -478,7 +490,12 @@ impl LoxBytecodeCompiler {
         }
     }
 
-    fn emit_constant(&mut self, source: &str, chunk: &mut LoxBytecodeChunk, value: LoxValueNumber) {
+    fn emit_constant(
+        &mut self,
+        source: &str,
+        chunk: &mut LoxBytecodeChunk,
+        value: LoxBytecodeValue,
+    ) {
         let constant_value = self.build_constant(source, chunk, value);
         self.emit_bytes(chunk, LoxBytecodeOpcode::Constant, constant_value);
     }
@@ -487,7 +504,7 @@ impl LoxBytecodeCompiler {
         &mut self,
         source: &str,
         chunk: &mut LoxBytecodeChunk,
-        value: LoxValueNumber,
+        value: LoxBytecodeValue,
     ) -> LoxBytecodeOpcode {
         let constant = chunk.add_constant(value);
         if constant > u8::MAX as usize {
@@ -529,6 +546,18 @@ impl LoxBytecodeCompiler {
                 .expect("compiler expects a valid value for LoxBytecodeOperatorPrecedence");
         self.parse_precedence(source, precedence, lexer, chunk)?;
         match operator_kind {
+            LoxBytecodeTokenType::BangEqual => {
+                self.emit_bytes(chunk, LoxBytecodeOpcode::Equal, LoxBytecodeOpcode::Not)
+            }
+            LoxBytecodeTokenType::EqualEqual => self.emit_byte(chunk, LoxBytecodeOpcode::Equal),
+            LoxBytecodeTokenType::Greater => self.emit_byte(chunk, LoxBytecodeOpcode::Greater),
+            LoxBytecodeTokenType::GreaterEqual => {
+                self.emit_bytes(chunk, LoxBytecodeOpcode::Less, LoxBytecodeOpcode::Not)
+            }
+            LoxBytecodeTokenType::Less => self.emit_byte(chunk, LoxBytecodeOpcode::Less),
+            LoxBytecodeTokenType::LessEqual => {
+                self.emit_bytes(chunk, LoxBytecodeOpcode::Greater, LoxBytecodeOpcode::Not)
+            }
             LoxBytecodeTokenType::Plus => self.emit_byte(chunk, LoxBytecodeOpcode::Add),
             LoxBytecodeTokenType::Minus => self.emit_byte(chunk, LoxBytecodeOpcode::Subtract),
             LoxBytecodeTokenType::Star => self.emit_byte(chunk, LoxBytecodeOpcode::Multiply),
@@ -549,6 +578,7 @@ impl LoxBytecodeCompiler {
         self.parse_precedence(source, LoxBytecodeOperatorPrecedence::Unary, lexer, chunk)?;
         // emit the operator instruction
         match operator_kind {
+            LoxBytecodeTokenType::Bang => self.emit_byte(chunk, LoxBytecodeOpcode::Not),
             LoxBytecodeTokenType::Minus => self.emit_byte(chunk, LoxBytecodeOpcode::Negate),
             _ => unreachable!(),
         };
@@ -588,10 +618,20 @@ impl LoxBytecodeCompiler {
 
     fn handle_number(&mut self, source: &str, chunk: &mut LoxBytecodeChunk) -> BResult<()> {
         let lexeme = self.parser.previous.get_lexeme(source);
-        let value: LoxValueNumber = lexeme
+        let value: f64 = lexeme
             .parse()
             .map_err(|_| LoxBytecodeInterpreterError::ParserInvalidNumber(lexeme.into()))?;
-        self.emit_constant(source, chunk, value);
+        self.emit_constant(source, chunk, LoxBytecodeValue::Number(value));
+        Ok(())
+    }
+
+    fn handle_literal(&mut self, source: &str, chunk: &mut LoxBytecodeChunk) -> BResult<()> {
+        match self.parser.previous.get_kind() {
+            LoxBytecodeTokenType::False => self.emit_byte(chunk, LoxBytecodeOpcode::False),
+            LoxBytecodeTokenType::Nil => self.emit_byte(chunk, LoxBytecodeOpcode::Nil),
+            LoxBytecodeTokenType::True => self.emit_byte(chunk, LoxBytecodeOpcode::True),
+            _ => unreachable!(),
+        }
         Ok(())
     }
 
