@@ -3,7 +3,7 @@ use crate::errors::BResult;
 use super::{
     debug::{disassemble_instruction, print_value},
     lexer::LoxBytecodeLexer,
-    values::LoxBytecodeValue,
+    values::{LoxBytecodeObject, LoxBytecodeValue},
     LoxBytecodeChunk, LoxBytecodeOpcode,
 };
 
@@ -57,7 +57,7 @@ impl Default for LoxBytecodeVirtualMachine {
 }
 
 impl LoxBytecodeVirtualMachine {
-    pub fn run_code(&mut self, code: &String) -> BResult<LoxInterpreterResult> {
+    pub fn run_code(&mut self, code: &str) -> BResult<LoxInterpreterResult> {
         let mut lexer = LoxBytecodeLexer::default();
         let parsed = lexer.compile(code)?;
         self.interpret()
@@ -107,7 +107,20 @@ impl LoxBytecodeVirtualMachine {
                 LoxBytecodeOpcode::Less => {
                     vm_binary_operation!(self, <, LoxBytecodeValue::Boolean)
                 }
-                LoxBytecodeOpcode::Add => vm_binary_operation!(self, +, LoxBytecodeValue::Number),
+                LoxBytecodeOpcode::Add => {
+                    // string concatenation
+                    if self.peek(0).is_string() && self.peek(1).is_string() {
+                        self.handle_concatenation()?;
+                    } else if self.peek(0).is_number() && self.peek(1).is_number() {
+                        // addition
+                        let b = self.stack_pop().as_number().unwrap();
+                        let a = self.stack_pop().as_number().unwrap();
+                        self.stack_push(LoxBytecodeValue::Number(a + b));
+                    } else {
+                        self.runtime_error("Operands must be two numbers or two strings.");
+                        return Ok(LoxInterpreterResult::RuntimeError);
+                    }
+                }
                 LoxBytecodeOpcode::Subtract => {
                     vm_binary_operation!(self, -, LoxBytecodeValue::Number)
                 }
@@ -141,6 +154,22 @@ impl LoxBytecodeVirtualMachine {
             }
         }
         Ok(LoxInterpreterResult::Ok)
+    }
+
+    fn handle_concatenation(&mut self) -> BResult<()> {
+        let b = self
+            .stack_pop()
+            .as_string()
+            .expect("vm.handle_concatenation expects popped value to be a string")
+            .clone();
+        let a = self
+            .stack_pop()
+            .as_string()
+            .expect("vm.handle_concatenation expects popped value to be a string")
+            .clone();
+        let value = a + &b;
+        self.stack_push(LoxBytecodeValue::Object(LoxBytecodeObject::String(value)));
+        Ok(())
     }
 
     fn stack_push(&mut self, value: LoxBytecodeValue) {

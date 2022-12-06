@@ -3,12 +3,13 @@ use std::collections::HashMap;
 use crate::{
     bytecode::lexer::LoxBytecodeTokenType,
     errors::{BResult, LoxBytecodeInterpreterError},
+    lexer,
 };
 
 use super::{
     debug::disassemble_chunk,
     lexer::{LoxBytecodeLexer, LoxBytecodeToken},
-    values::LoxBytecodeValue,
+    values::{LoxBytecodeObject, LoxBytecodeValue},
     LoxBytecodeChunk, LoxBytecodeOpcode,
 };
 
@@ -531,6 +532,17 @@ impl LoxBytecodeCompiler {
 
     fn emit_byte(&self, chunk: &mut LoxBytecodeChunk, opcode: LoxBytecodeOpcode) {
         chunk.append(opcode, self.parser.previous.get_line_number());
+    }
+
+    fn handle_string(&mut self, source: &str, chunk: &mut LoxBytecodeChunk) -> BResult<()> {
+        let start = self.parser.previous.get_start() + 1; // avoid the leading quotation mark
+        let slice = &source[start..start + self.parser.previous.get_length() - 2]; // TODO: check slicing
+        self.emit_constant(
+            source,
+            chunk,
+            LoxBytecodeValue::Object(LoxBytecodeObject::String(slice.into())),
+        );
+        Ok(())
     }
 
     fn handle_binary(

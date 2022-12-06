@@ -3,6 +3,7 @@ use self::values::{LoxBytecodeValue, LoxValueArray};
 pub mod compiler;
 pub mod debug;
 pub mod lexer;
+pub mod table;
 pub mod values;
 pub mod vm;
 
